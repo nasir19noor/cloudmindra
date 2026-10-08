@@ -1,43 +1,97 @@
-name: Deploy CloudMindra
+name: 'Deploy cloudmindra.com'
 
 on:
   push:
-    branches: [main]
     paths:
       - 'app/frontend/**'
       - 'app/backend/**'
       - 'docker-compose.yml'
       - '.github/workflows/deploy.yml'
+    branches:
+      - main
+  workflow_dispatch:
 
 permissions:
   id-token: write
   contents: read
 
 jobs:
-  deploy:
-    name: Deploy
-    runs-on: ubuntu-latest
+  changes:
+    runs-on: [self-hosted, contabo-cloudmindra]
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+    - name: Remove stale nested .git directories
+      run: find "$GITHUB_WORKSPACE" -mindepth 2 -name ".git" -exec rm -rf {} + 2>/dev/null || true
 
-      - name: Configure AWS Credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - name: Download .env from S3
-        working-directory: app/backend
-        run: aws s3 cp s3://cloudmindra.com/backend/.env .env
+    - name: Detect changed paths
+      uses: dorny/paths-filter@v3
+      id: filter
+      with:
+        filters: |
+          backend:
+            - 'app/backend/**'
+            - 'docker-compose.yml'
+            - '.github/workflows/deploy.yml'
+          frontend:
+            - 'app/frontend/**'
+            - 'docker-compose.yml'
+            - '.github/workflows/deploy.yml'
 
-      - name: Deploy to Contabo
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.CONTABO_HOST }}
-          username: ${{ secrets.CONTABO_USER }}
-          key: ${{ secrets.CONTABO_SSH_KEY }}
-          script: |
-            cd /opt/cloudmindra
-            git pull origin main
-            docker compose up -d --build
+  deploy-backend:
+    needs: changes
+    if: ${{ needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch' }}
+    runs-on: [self-hosted, contabo-cloudmindra]
+    steps:
+    - name: Configure AWS Credentials (OIDC)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Deploy backend
+      env:
+        SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+      run: |
+        echo "Pulling .env from S3..."
+        rm -f app/backend/.env
+        aws s3 cp s3://cloudmindra.com/backend/.env app/backend/.env
+
+        echo "Building and starting backend (and db if not running)..."
+        echo "$SSH_PASSWORD" | sudo -S docker compose -p cloudmindra --env-file app/backend/.env \
+          up -d --build backend
+
+        echo "$SSH_PASSWORD" | sudo -S docker image prune -f
+
+        echo "Backend deployed successfully"
+
+  deploy-frontend:
+    needs: [changes, deploy-backend]
+    if: ${{ always() && !failure() && !cancelled() && (needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch') }}
+    runs-on: [self-hosted, contabo-cloudmindra]
+    steps:
+    - name: Configure AWS Credentials (OIDC)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Deploy frontend
+      env:
+        SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+      run: |
+        # compose validates the whole file, so backend's env_file must exist
+        rm -f app/backend/.env
+        aws s3 cp s3://cloudmindra.com/backend/.env app/backend/.env
+
+        echo "Building and starting frontend..."
+        echo "$SSH_PASSWORD" | sudo -S docker compose -p cloudmindra --env-file app/backend/.env \
+          up -d --build --no-deps frontend
+
+        echo "$SSH_PASSWORD" | sudo -S docker image prune -f
+
+        echo "Frontend deployed successfully"
