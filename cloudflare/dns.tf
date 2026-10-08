@@ -12,7 +12,7 @@ resource "cloudflare_record" "cloudmindra" {
   content = "207.180.248.214"
   type    = "A"
   proxied = true
-  ttl     = 3600
+  ttl     = 1
 }
 
 
