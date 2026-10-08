@@ -1,0 +1,413 @@
+---
+import '../styles/global.css';
+
+const API_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cloudmindra.com';
+
+const ranges = [
+  { days: 1, label: 'Today' },
+  { days: 7, label: '7 days' },
+  { days: 30, label: '30 days' },
+  { days: 90, label: '90 days' },
+];
+
+const panels = [
+  { key: 'pages', title: 'Top pages' },
+  { key: 'referrers', title: 'Referrers' },
+  { key: 'countries', title: 'Countries' },
+  { key: 'cities', title: 'Cities' },
+  { key: 'devices', title: 'Devices' },
+  { key: 'browsers', title: 'Browsers' },
+  { key: 'os', title: 'Operating systems' },
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="theme-color" content="#f7f5f0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@300;400&family=Manrope:wght@300;400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <title>Admin | CloudMindra</title>
+  </head>
+  <body data-api={API_URL}>
+    <!-- Loading -->
+    <div id="view-loading" class="flex min-h-screen items-center justify-center text-body text-fg/60">Loading…</div>
+
+    <!-- Login -->
+    <div id="view-login" class="hidden min-h-screen items-center justify-center px-6">
+      <form id="login-form" class="card w-full max-w-[380px] space-y-5 p-8">
+        <div class="flex items-center gap-2.5 font-display text-[19px]">
+          <svg width="22" height="22" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+            <circle cx="16" cy="16" r="10" stroke="#ff6b35" stroke-width="2.5"></circle>
+            <circle cx="16" cy="16" r="3.5" fill="#111111"></circle>
+          </svg>
+          CloudMindra Admin
+        </div>
+        <div>
+          <label for="username" class="mb-2 block text-caption font-medium text-fg/70">Username</label>
+          <input id="username" name="username" autocomplete="username" required class="field" />
+        </div>
+        <div>
+          <label for="password" class="mb-2 block text-caption font-medium text-fg/70">Password</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required class="field" />
+        </div>
+        <button type="submit" class="h-[44px] w-full rounded-full bg-fg text-body font-medium text-canvas transition-opacity hover:opacity-90 disabled:opacity-60">
+          Sign in
+        </button>
+        <p id="login-error" class="hidden text-center text-caption text-red-600" role="alert"></p>
+      </form>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="view-dashboard" class="hidden">
+      <header class="sticky top-0 z-40 border-b border-fg/[0.08] bg-canvas/85 backdrop-blur-xl">
+        <div class="mx-auto flex h-16 max-w-[1200px] items-center justify-between gap-4 px-6">
+          <a href="/" class="flex items-center gap-2.5 font-display text-[18px]">
+            <svg width="20" height="20" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+              <circle cx="16" cy="16" r="10" stroke="#ff6b35" stroke-width="2.5"></circle>
+              <circle cx="16" cy="16" r="3.5" fill="#111111"></circle>
+            </svg>
+            <span>CloudMindra <span class="text-fg/55">Admin</span></span>
+          </a>
+          <div class="flex items-center gap-3">
+            <span id="admin-user" class="hidden text-caption text-fg/60 sm:inline"></span>
+            <button id="logout" class="btn-secondary h-[34px] px-4 text-caption">Sign out</button>
+          </div>
+        </div>
+      </header>
+
+      <main class="mx-auto max-w-[1200px] px-6 py-10">
+        <div class="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p class="eyebrow mb-3">Analytics</p>
+            <h1 class="font-display text-display-sm font-light">Visitors</h1>
+          </div>
+          <div id="range" class="inline-flex self-start rounded-full bg-fg/[0.05] p-1 ring-1 ring-fg/[0.08] md:self-auto">
+            {ranges.map((r) => (
+              <button
+                data-days={r.days}
+                class="range-btn rounded-full px-4 py-1.5 text-caption font-medium text-fg/60 transition-colors hover:text-fg"
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <!-- KPIs -->
+        <div class="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {[
+            ['visits', 'Page views'],
+            ['visitors', 'Unique visitors'],
+            ['pages_per_visitor', 'Pages / visitor'],
+            ['contacts', 'Contact messages'],
+          ].map(([key, label]) => (
+            <div class="card p-6">
+              <p class="eyebrow">{label}</p>
+              <p data-kpi={key} class="mt-4 font-display text-[36px] font-light leading-none">–</p>
+            </div>
+          ))}
+        </div>
+
+        <!-- Daily chart -->
+        <section class="card mt-4 p-6">
+          <div class="flex items-center justify-between">
+            <p class="eyebrow">Daily traffic</p>
+            <div class="flex items-center gap-4 text-caption text-fg/60">
+              <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-fg/80"></span>Page views</span>
+              <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-brand"></span>Visitors</span>
+            </div>
+          </div>
+          <div id="chart" class="relative mt-6 h-[220px]"></div>
+          <div id="chart-axis" class="mt-2 flex justify-between text-[11px] text-fg/50"></div>
+        </section>
+
+        <!-- Breakdowns -->
+        <div class="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {panels.map((p) => (
+            <section class="card p-6">
+              <p class="eyebrow">{p.title}</p>
+              <ul data-panel={p.key} class="mt-5 space-y-3"></ul>
+            </section>
+          ))}
+        </div>
+
+        <!-- Contact submissions -->
+        <section class="card mt-4 overflow-hidden">
+          <div class="p-6 pb-4"><p class="eyebrow">Contact messages</p></div>
+          <div id="contacts" class="divide-y divide-fg/[0.06] border-t border-fg/[0.08]"></div>
+        </section>
+        <!-- Recent visits -->
+        <section class="card mt-4 overflow-hidden">
+          <div class="p-6 pb-4"><p class="eyebrow">Recent visits</p></div>
+          <div class="overflow-x-auto">
+            <table class="w-full min-w-[760px] text-left text-[13px]">
+              <thead class="border-y border-fg/[0.08] text-[11px] uppercase tracking-[0.1em] text-fg/55">
+                <tr>
+                  <th class="px-6 py-3 font-medium">Time</th>
+                  <th class="px-3 py-3 font-medium">Page</th>
+                  <th class="px-3 py-3 font-medium">Location</th>
+                  <th class="px-3 py-3 font-medium">Device</th>
+                  <th class="px-3 py-3 font-medium">Referrer</th>
+                  <th class="px-6 py-3 font-medium">IP</th>
+                </tr>
+              </thead>
+              <tbody id="recent" class="divide-y divide-fg/[0.06]"></tbody>
+            </table>
+          </div>
+          <button id="recent-more" class="hidden w-full border-t border-fg/[0.08] py-3 text-caption font-medium text-fg/70 transition-colors hover:bg-fg/[0.03] hover:text-fg"></button>
+        </section>
+
+      </main>
+    </div>
+  </body>
+</html>
+
+<script>
+  const API = document.body.dataset.api as string;
+  let days = 30;
+
+  type Row = { label: string; visits: number };
+
+  const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
+
+  // All visitor-supplied values go through esc() before touching innerHTML
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
+  const fmtNum = (n: number) => new Intl.NumberFormat().format(n);
+  const fmtTime = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '–';
+
+  function show(view: 'loading' | 'login' | 'dashboard') {
+    for (const v of ['loading', 'login', 'dashboard']) {
+      const el = $(`#view-${v}`);
+      el.classList.toggle('hidden', v !== view);
+      el.classList.toggle('flex', v === view && v !== 'dashboard');
+    }
+  }
+
+  async function api(path: string, init: RequestInit = {}) {
+    return fetch(`${API}${path}`, {
+      credentials: 'include',
+      ...init,
+      headers: { 'Content-Type': 'application/json', ...(init.headers || {}) },
+    });
+  }
+
+  function renderList(key: string, rows: Row[]) {
+    const ul = $(`[data-panel="${key}"]`);
+    if (!rows.length) {
+      ul.innerHTML = '<li class="text-caption text-fg/50">No data yet</li>';
+      return;
+    }
+    const max = Math.max(...rows.map((r) => r.visits));
+    ul.innerHTML = rows
+      .map(
+        (r) => `
+        <li>
+          <div class="flex items-center justify-between gap-3 text-[13px]">
+            <span class="truncate text-fg/80" title="${esc(r.label)}">${esc(r.label)}</span>
+            <span class="shrink-0 font-medium tabular-nums">${fmtNum(r.visits)}</span>
+          </div>
+          <div class="mt-1.5 h-1 rounded-full bg-fg/[0.06]">
+            <div class="h-1 rounded-full bg-brand/80" style="width:${Math.max(2, (r.visits / max) * 100)}%"></div>
+          </div>
+        </li>`,
+      )
+      .join('');
+  }
+
+  function renderChart(daily: { date: string; visits: number; visitors: number }[]) {
+    const max = Math.max(1, ...daily.map((d) => d.visits));
+    const chart = $('#chart');
+    chart.innerHTML = `
+      <div class="absolute inset-0 flex items-end gap-[2px]">
+        ${daily
+          .map(
+            (d) => `
+          <div class="group relative flex h-full flex-1 items-end justify-center">
+            <div class="w-full max-w-[28px] rounded-t-[3px] bg-fg/80 transition-opacity group-hover:opacity-70" style="height:${(d.visits / max) * 100}%"></div>
+            <div class="absolute bottom-0 h-[3px] w-full max-w-[28px] rounded-full bg-brand" style="bottom:${(d.visitors / max) * 100}%"></div>
+            <div class="pointer-events-none absolute bottom-full z-10 mb-2 hidden whitespace-nowrap rounded-lg bg-fg px-2.5 py-1.5 text-[11px] text-canvas group-hover:block">
+              ${esc(d.date)} · ${fmtNum(d.visits)} views · ${fmtNum(d.visitors)} visitors
+            </div>
+          </div>`,
+          )
+          .join('')}
+      </div>`;
+    const first = daily[0]?.date ?? '';
+    const last = daily[daily.length - 1]?.date ?? '';
+    $('#chart-axis').innerHTML = `<span>${esc(first)}</span><span>${esc(last)}</span>`;
+  }
+
+  const RECENT_PREVIEW = 20;
+  let recentRows: any[] = [];
+  let showAllRecent = false;
+
+  function renderRecent(rows: any[] = recentRows) {
+    recentRows = rows;
+    const more = $('#recent-more');
+    more.classList.toggle('hidden', rows.length <= RECENT_PREVIEW);
+    more.textContent = showAllRecent ? 'Show less' : `Show all ${rows.length}`;
+    if (!showAllRecent) rows = rows.slice(0, RECENT_PREVIEW);
+    const tbody = $('#recent');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-6 text-fg/50">No visits in this range</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows
+      .map((r) => {
+        const loc = [r.city, r.country].filter(Boolean).join(', ') || '–';
+        let ref = '–';
+        if (r.referrer) {
+          try {
+            ref = new URL(r.referrer).host;
+          } catch {
+            ref = r.referrer;
+          }
+        }
+        return `
+        <tr class="text-fg/80">
+          <td class="whitespace-nowrap px-6 py-3 text-fg/60">${esc(fmtTime(r.visited_at))}</td>
+          <td class="max-w-[220px] truncate px-3 py-3 font-medium text-fg">${esc(r.path)}</td>
+          <td class="px-3 py-3">${esc(loc)}</td>
+          <td class="whitespace-nowrap px-3 py-3">${esc(r.device)} · ${esc(r.browser)} · ${esc(r.os)}</td>
+          <td class="max-w-[180px] truncate px-3 py-3" title="${esc(r.referrer)}">${esc(ref)}</td>
+          <td class="whitespace-nowrap px-6 py-3 font-mono text-[12px] text-fg/55">${esc(r.ip)}</td>
+        </tr>`;
+      })
+      .join('');
+  }
+
+  async function loadContacts() {
+    const box = $('#contacts');
+    const res = await api('/api/contact');
+    if (!res.ok) {
+      box.innerHTML = '<p class="px-6 py-6 text-caption text-fg/50">Could not load messages</p>';
+      return;
+    }
+    const rows = (await res.json()).slice(0, 50);
+    if (!rows.length) {
+      box.innerHTML = '<p class="px-6 py-6 text-caption text-fg/50">No messages yet</p>';
+      return;
+    }
+    box.innerHTML = rows
+      .map(
+        (c: any) => `
+        <details class="group px-6 py-4">
+          <summary class="flex cursor-pointer list-none items-center justify-between gap-4 [&::-webkit-details-marker]:hidden">
+            <span class="min-w-0">
+              <span class="font-medium">${esc(c.name)}</span>
+              <span class="text-fg/60"> · ${esc(c.email)}${c.company ? ' · ' + esc(c.company) : ''}</span>
+            </span>
+            <span class="shrink-0 text-caption text-fg/55">${esc(fmtTime(c.created_at))}</span>
+          </summary>
+          <p class="mt-3 whitespace-pre-wrap text-body text-fg/75">${esc(c.message)}</p>
+          <a href="mailto:${encodeURIComponent(c.email)}" class="mt-3 inline-block text-caption font-medium text-brand hover:underline">Reply by email →</a>
+        </details>`,
+      )
+      .join('');
+  }
+
+  async function loadAnalytics() {
+    document.querySelectorAll<HTMLButtonElement>('.range-btn').forEach((b) => {
+      const active = Number(b.dataset.days) === days;
+      b.classList.toggle('bg-surface', active);
+      b.classList.toggle('text-fg', active);
+      b.classList.toggle('shadow-sm', active);
+    });
+
+    const res = await api(`/api/admin/analytics?days=${days}`);
+    if (res.status === 401) return show('login');
+    if (!res.ok) return;
+    const data = await res.json();
+
+    for (const [key, value] of Object.entries(data.totals)) {
+      const el = document.querySelector(`[data-kpi="${key}"]`);
+      if (el) el.textContent = fmtNum(value as number);
+    }
+    renderChart(data.daily);
+    for (const key of ['pages', 'referrers', 'countries', 'cities', 'devices', 'browsers', 'os']) {
+      renderList(key, data[key]);
+    }
+    renderRecent(data.recent);
+  }
+
+  async function enterDashboard(username: string) {
+    $('#admin-user').textContent = username;
+    show('dashboard');
+    await Promise.all([loadAnalytics(), loadContacts()]);
+  }
+
+  $('#login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget as HTMLFormElement;
+    const btn = form.querySelector('button')!;
+    const err = $('#login-error');
+    btn.disabled = true;
+    err.classList.add('hidden');
+    try {
+      const res = await api('/api/admin/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: (form.elements.namedItem('username') as HTMLInputElement).value,
+          password: (form.elements.namedItem('password') as HTMLInputElement).value,
+        }),
+      });
+      if (res.ok) {
+        const { username } = await res.json();
+        form.reset();
+        await enterDashboard(username);
+      } else {
+        const body = await res.json().catch(() => ({}));
+        err.textContent = body.detail || 'Sign in failed';
+        err.classList.remove('hidden');
+      }
+    } catch {
+      err.textContent = 'Could not reach the server';
+      err.classList.remove('hidden');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  $('#logout').addEventListener('click', async () => {
+    await api('/api/admin/logout', { method: 'POST' }).catch(() => {});
+    show('login');
+  });
+
+  $('#recent-more').addEventListener('click', () => {
+    showAllRecent = !showAllRecent;
+    renderRecent();
+  });
+
+  $('#range').addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.range-btn');
+    if (!btn) return;
+    days = Number(btn.dataset.days);
+    loadAnalytics();
+  });
+
+  (async () => {
+    try {
+      const res = await api('/api/admin/me');
+      if (res.ok) {
+        const { username } = await res.json();
+        await enterDashboard(username);
+      } else {
+        show('login');
+      }
+    } catch {
+      show('login');
+    }
+  })();
+</script>

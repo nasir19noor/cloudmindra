@@ -9,6 +9,7 @@ interface Props {
 }
 
 const { title, description = 'CloudMindra — Cloud & AI Solutions' } = Astro.props;
+const API_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cloudmindra.com';
 ---
 
 <!doctype html>
@@ -39,5 +40,16 @@ const { title, description = 'CloudMindra — Cloud & AI Solutions' } = Astro.pr
       <slot />
     </main>
     <Footer />
+    <script define:vars={{ API_URL }}>
+      // Lightweight page-view tracking for the admin analytics dashboard
+      if (navigator.doNotTrack !== '1' && !location.pathname.startsWith('/admin')) {
+        fetch(`${API_URL}/api/analytics/track`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: location.pathname, referrer: document.referrer || null }),
+          keepalive: true,
+        }).catch(() => {});
+      }
+    </script>
   </body>
 </html>

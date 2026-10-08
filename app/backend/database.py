@@ -24,5 +24,5 @@ def get_db():
 
 
 def init_db():
-    from db_models import ContactSubmission, BlogPost, Service  # noqa: F401
+    from db_models import ContactSubmission, BlogPost, Service, PageVisit  # noqa: F401
     Base.metadata.create_all(bind=engine)

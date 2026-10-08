@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 import uuid
 
+from auth import require_admin
 from database import get_db
 from models import ContactRequest, ContactResponse
 import db_models
@@ -47,7 +48,7 @@ async def submit_contact(
 
 
 @router.get("", response_model=list[ContactResponse])
-async def list_contacts(db: Session = Depends(get_db)):
+async def list_contacts(db: Session = Depends(get_db), _: str = Depends(require_admin)):
     submissions = db.query(db_models.ContactSubmission).order_by(
         db_models.ContactSubmission.created_at.desc()
     ).all()

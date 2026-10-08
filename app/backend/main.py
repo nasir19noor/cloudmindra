@@ -5,7 +5,7 @@ import uvicorn
 import os
 
 from database import init_db
-from routers import contact, services, blog
+from routers import contact, services, blog, analytics, admin
 
 app = FastAPI(
     title="CloudMindra API",
@@ -40,6 +40,8 @@ async def health():
 app.include_router(contact.router)
 app.include_router(services.router)
 app.include_router(blog.router)
+app.include_router(analytics.router)
+app.include_router(admin.router)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=11001)
