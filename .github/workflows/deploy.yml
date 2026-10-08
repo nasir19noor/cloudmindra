@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   changes:
-    runs-on: [self-hosted, contabo-cloudmindra]
+    runs-on: [self-hosted]
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
@@ -45,7 +45,7 @@ jobs:
   deploy-backend:
     needs: changes
     if: ${{ needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch' }}
-    runs-on: [self-hosted, contabo-cloudmindra]
+    runs-on: [self-hosted]
     steps:
     - name: Configure AWS Credentials (OIDC)
       uses: aws-actions/configure-aws-credentials@v4
@@ -72,7 +72,7 @@ jobs:
   deploy-frontend:
     needs: [changes, deploy-backend]
     if: ${{ always() && !failure() && !cancelled() && (needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch') }}
-    runs-on: [self-hosted, contabo-cloudmindra]
+    runs-on: [self-hosted]
     steps:
     - name: Configure AWS Credentials (OIDC)
       uses: aws-actions/configure-aws-credentials@v4
