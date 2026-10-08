@@ -1,0 +1,32 @@
+aws:
+  global:
+    region: "ap-southeast-1"
+    state_bucket: "cloudmindra.com"
+
+  network:
+    vpc_name: "nasir-vpc"
+    description: "eks-vpc"
+    cidr_block: "10.1.0.0/16"
+    instance_tenancy: "default"
+    enable_dns_support: true
+    enable_dns_hostnames: true
+    subnet_name: "nasir-subnet"
+    subnet_count: 3
+    subnet_mask: "24"
+  s3:
+    bucket_name_wordpress: "wordpress.nasir.id"
+  acm:
+    domain_name_nasir: "assets.nasir.id" 
+  cloudfront:
+    domain_name_nasir: "assets.nasir.id"  
+cloudflare:
+  zone_name: "cloudmindra.com"
+  root: "@"
+contabo:
+  ip: "161.97.100.1"  
+
+  
+      
+ 
+
+
