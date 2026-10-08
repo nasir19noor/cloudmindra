@@ -26,8 +26,3 @@ resource "cloudflare_record" "cloudmindra" {
 
 
 
-
-
-
-
-
