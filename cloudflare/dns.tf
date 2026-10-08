@@ -16,6 +16,45 @@ resource "cloudflare_record" "api_cloudmindra" {
   ttl     = 3600
 }
 
+# MX and DKIM records below are created and locked by Cloudflare Email Routing
+# (deleting them returns error 1046). Stop tracking them in Terraform without
+# destroying them; Email Routing owns them from here on.
+removed {
+  from = cloudflare_record.mx1_cloudmindra
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = cloudflare_record.mx2_cloudmindra
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = cloudflare_record.mx3_cloudmindra
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = cloudflare_record.spf1_cloudmindra
+  lifecycle {
+    destroy = false
+  }
+}
+
+resource "cloudflare_record" "spf2_cloudmindra" {
+  zone_id = data.cloudflare_zones.cloudmindra.zones[0].id
+  name    = local.root
+  content = "v=spf1 include:_spf.mx.cloudflare.net ~all"
+  type    = "TXT"
+  ttl     = 3600
+}
+
 resource "cloudflare_record" "ses1_cloudmindra" {
   zone_id = data.cloudflare_zones.cloudmindra.zones[0].id
   name    = "r6fxnmigbkkqfjleaqli3i3jbl46digj._domainkey.cloudmindra.com"
@@ -51,23 +90,3 @@ resource "cloudflare_record" "ses_dmarc_cloudmindra" {
   proxied = false
   ttl     = 3600
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
