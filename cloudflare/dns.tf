@@ -61,6 +61,43 @@ resource "cloudflare_record" "spf2_cloudmindra" {
 }
 
 
+resource "cloudflare_record" "ses1_cloudmindra" {
+  zone_id = data.cloudflare_zones.cloudmindra.zones[0].id
+  name    = "r6fxnmigbkkqfjleaqli3i3jbl46digj._domainkey.cloudmindra.com"
+  content = "r6fxnmigbkkqfjleaqli3i3jbl46digj.dkim.amazonses.com"
+  type    = "CNAME"
+  proxied = false
+  ttl     = 3600
+}
+
+resource "cloudflare_record" "ses2_cloudmindra" {
+  zone_id = data.cloudflare_zones.cloudmindra.zones[0].id
+  name    = "egn2rumb3asbtwnbr3qyjxu7xjhg5o6m._domainkey.cloudmindra.com"
+  content = "egn2rumb3asbtwnbr3qyjxu7xjhg5o6m.dkim.amazonses.com"
+  type    = "CNAME"
+  proxied = false
+  ttl     = 3600
+}
+
+resource "cloudflare_record" "ses3_cloudmindra" {
+  zone_id = data.cloudflare_zones.cloudmindra.zones[0].id
+  name    = "y7qmsarhbvazsiuo7inf2cladsy36mgj._domainkey.cloudmindra.com"
+  content = "y7qmsarhbvazsiuo7inf2cladsy36mgj.dkim.amazonses.com"
+  type    = "CNAME"
+  proxied = false
+  ttl     = 3600
+}
+
+resource "cloudflare_record" "ses_dmarc_cloudmindra" {
+  zone_id = data.cloudflare_zones.cloudmindra.zones[0].id
+  name    = "_dmarc.cloudmindra.com"
+  content = "v=DMARC1; p=none;"
+  type    = "TXT"
+  proxied = false
+  ttl     = 3600
+}
+
+
 
 
 
