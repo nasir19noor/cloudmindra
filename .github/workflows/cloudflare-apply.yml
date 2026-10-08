@@ -71,6 +71,10 @@ jobs:
         working-directory: cloudflare
         run: terraform init
 
+      - name: Remove stale zone_settings_override from state
+        working-directory: cloudflare
+        run: terraform state rm cloudflare_zone_settings_override.cloudmindra || true
+
       - name: Terraform Validate
         working-directory: cloudflare
         run: terraform validate
