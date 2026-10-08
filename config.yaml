@@ -14,16 +14,16 @@ aws:
     subnet_count: 3
     subnet_mask: "24"
   s3:
-    bucket_name_wordpress: "wordpress.nasir.id"
+    bucket_name_wordpress: ""
   acm:
-    domain_name_nasir: "assets.nasir.id" 
+    domain_name_nasir: "" 
   cloudfront:
-    domain_name_nasir: "assets.nasir.id"  
+    domain_name_nasir: ""  
 cloudflare:
   zone_name: "cloudmindra.com"
   root: "@"
 contabo:
-  ip: "161.97.100.1"  
+  ip: "207.180.248.214"  
 
   
       
