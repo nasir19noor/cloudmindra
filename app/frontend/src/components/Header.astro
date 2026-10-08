@@ -10,12 +10,12 @@ const currentPath = Astro.url.pathname.replace(/\/$/, '') || '/';
 
 <header class="fixed inset-x-0 top-0 z-50 px-3 pt-3 md:px-5 md:pt-4">
   <nav
-    class="relative mx-auto flex h-[60px] max-w-[1100px] items-center justify-between rounded-full bg-[#141414]/70 px-5 ring-1 ring-white/[0.08] backdrop-blur-xl"
+    class="relative mx-auto flex h-[60px] max-w-[1100px] items-center justify-between rounded-full bg-white/70 px-5 ring-1 ring-fg/[0.08] backdrop-blur-xl"
   >
     <a href="/" class="flex items-center gap-2.5 font-display text-[19px] font-normal tracking-tight">
       <svg width="22" height="22" viewBox="0 0 32 32" fill="none" aria-hidden="true">
         <circle cx="16" cy="16" r="10" stroke="#ff6b35" stroke-width="2.5"></circle>
-        <circle cx="16" cy="16" r="3.5" fill="#fff"></circle>
+        <circle cx="16" cy="16" r="3.5" fill="#111111"></circle>
       </svg>
       CloudMindra
     </a>
@@ -27,8 +27,8 @@ const currentPath = Astro.url.pathname.replace(/\/$/, '') || '/';
             href={link.href}
             aria-current={currentPath === link.href ? 'page' : undefined}
             class:list={[
-              'text-body font-medium transition-colors hover:text-white',
-              currentPath === link.href ? 'text-white' : 'text-white/50',
+              'text-body font-medium transition-colors hover:text-fg',
+              currentPath === link.href ? 'text-fg' : 'text-fg/60',
             ]}
           >
             {link.label}
@@ -41,7 +41,7 @@ const currentPath = Astro.url.pathname.replace(/\/$/, '') || '/';
 
     <details class="group md:hidden">
       <summary
-        class="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full ring-1 ring-white/10 [&::-webkit-details-marker]:hidden"
+        class="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full ring-1 ring-fg/10 [&::-webkit-details-marker]:hidden"
         aria-label="Toggle menu"
       >
         <svg class="group-open:hidden" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -51,13 +51,13 @@ const currentPath = Astro.url.pathname.replace(/\/$/, '') || '/';
           <path d="M3 3l10 10M13 3L3 13"></path>
         </svg>
       </summary>
-      <div class="absolute inset-x-0 top-[70px] rounded-3xl bg-[#141414]/95 p-3 ring-1 ring-white/[0.08] backdrop-blur-xl">
+      <div class="absolute inset-x-0 top-[70px] rounded-3xl bg-white/95 p-3 ring-1 ring-fg/[0.08] backdrop-blur-xl">
         {navLinks.map((link) => (
           <a
             href={link.href}
             class:list={[
               'block rounded-2xl px-4 py-3 text-body font-medium',
-              currentPath === link.href ? 'bg-white/[0.06] text-white' : 'text-white/60',
+              currentPath === link.href ? 'bg-fg/[0.06] text-fg' : 'text-fg/70',
             ]}
           >
             {link.label}

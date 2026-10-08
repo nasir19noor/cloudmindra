@@ -7,28 +7,28 @@
     scroll-behavior: smooth;
   }
   body {
-    @apply bg-ink text-white font-sans font-light antialiased;
+    @apply bg-canvas text-fg font-sans font-light antialiased;
   }
   ::selection {
-    @apply bg-brand/40 text-white;
+    @apply bg-brand/40 text-fg;
   }
 }
 
 @layer components {
   .eyebrow {
-    @apply font-sans text-[11px] font-medium uppercase tracking-[0.14em] text-white/50;
+    @apply font-sans text-[11px] font-medium uppercase tracking-[0.14em] text-fg/60;
   }
 
   .btn-secondary {
-    @apply inline-flex h-[38px] items-center justify-center gap-2 rounded-full bg-white/[0.06] px-5 text-body font-medium text-white ring-1 ring-white/10 transition-colors hover:bg-white/10;
+    @apply inline-flex h-[38px] items-center justify-center gap-2 rounded-full bg-fg/[0.06] px-5 text-body font-medium text-fg ring-1 ring-fg/10 transition-colors hover:bg-fg/10;
   }
 
   .card {
-    @apply rounded-2xl bg-surface ring-1 ring-white/[0.06];
+    @apply rounded-2xl bg-surface ring-1 ring-fg/[0.06];
   }
 
   .field {
-    @apply w-full rounded-xl bg-white/[0.03] px-4 py-3 text-body font-normal text-white ring-1 ring-white/10 outline-none transition placeholder:text-white/30 focus:bg-white/[0.05] focus:ring-brand/60;
+    @apply w-full rounded-xl bg-fg/[0.03] px-4 py-3 text-body font-normal text-fg ring-1 ring-fg/10 outline-none transition placeholder:text-fg/30 focus:bg-fg/[0.05] focus:ring-brand/60;
   }
 }
 
@@ -92,7 +92,7 @@
 
 /* Faint dotted grid used behind section headers */
 .dot-grid {
-  background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  background-image: radial-gradient(rgba(17, 17, 17, 0.09) 1px, transparent 1px);
   background-size: 22px 22px;
 }
 

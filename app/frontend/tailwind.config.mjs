@@ -4,9 +4,10 @@ export default {
   theme: {
     extend: {
       colors: {
-        ink: '#0d0d0d',
-        surface: '#121212',
-        'surface-2': '#141414',
+        canvas: '#f7f5f0',
+        fg: '#111111',
+        surface: '#ffffff',
+        'surface-2': '#fdfcf9',
         brand: {
           DEFAULT: '#ff6b35',
           100: '#ffb388',

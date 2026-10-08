@@ -29,18 +29,18 @@ const faqs = [
   <div class="mx-auto max-w-[1100px]">
     <SectionHeader title="Frequently asked questions" description="Something else on your mind? Reach out and we will answer directly." />
 
-    <div class="mt-12 divide-y divide-white/[0.08] border-y border-white/[0.08]">
+    <div class="mt-12 divide-y divide-fg/[0.08] border-y border-fg/[0.08]">
       {faqs.map((item) => (
         <details class="group py-6">
-          <summary class="flex cursor-pointer list-none items-center justify-between gap-6 text-[16px] font-normal text-white/85 transition-colors hover:text-white [&::-webkit-details-marker]:hidden">
+          <summary class="flex cursor-pointer list-none items-center justify-between gap-6 text-[16px] font-normal text-fg/85 transition-colors hover:text-fg [&::-webkit-details-marker]:hidden">
             {item.q}
-            <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full ring-1 ring-white/15 transition-transform group-open:rotate-45">
+            <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full ring-1 ring-fg/15 transition-transform group-open:rotate-45">
               <svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
                 <path d="M5 0v10M0 5h10"></path>
               </svg>
             </span>
           </summary>
-          <p class="mt-4 max-w-[720px] text-body text-white/55">{item.a}</p>
+          <p class="mt-4 max-w-[720px] text-body text-fg/65">{item.a}</p>
         </details>
       ))}
     </div>

@@ -18,14 +18,14 @@ const steps = [
       description="A predictable process with working software at every stage — not slide decks."
     />
 
-    <ol class="mt-14 grid gap-px overflow-hidden rounded-3xl bg-white/[0.06] ring-1 ring-white/[0.06] md:grid-cols-5">
+    <ol class="mt-14 grid gap-px overflow-hidden rounded-3xl bg-fg/[0.06] ring-1 ring-fg/[0.06] md:grid-cols-5">
       {steps.map((step, i) => (
-        <li class="relative bg-ink p-6 md:min-h-[230px]">
-          <span class="flex h-8 w-8 items-center justify-center rounded-full text-[12px] font-medium text-white/80 ring-1 ring-white/15">
+        <li class="relative bg-canvas p-6 md:min-h-[230px]">
+          <span class="flex h-8 w-8 items-center justify-center rounded-full text-[12px] font-medium text-fg/80 ring-1 ring-fg/15">
             {i + 1}
           </span>
           <p class="mt-8 font-display text-title font-light">{step.title}</p>
-          <p class="mt-2 text-[13.5px] text-white/50">{step.body}</p>
+          <p class="mt-2 text-[13.5px] text-fg/60">{step.body}</p>
         </li>
       ))}
     </ol>

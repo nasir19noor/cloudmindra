@@ -12,24 +12,24 @@ import { services } from '../data/services';
       <h1 class="max-w-[760px] text-balance font-display text-[38px] font-light leading-[1.15] md:text-display-xl">
         Everything you need to build, run, and scale.
       </h1>
-      <p class="mt-6 max-w-[520px] text-body text-white/65 md:text-[16px]">
+      <p class="mt-6 max-w-[520px] text-body text-fg/72 md:text-[16px]">
         Comprehensive cloud and AI services designed to help you build, deploy, and scale with confidence.
       </p>
     </div>
   </section>
 
   <section class="px-6 pb-[90px]">
-    <div class="mx-auto max-w-[1100px] border-t border-white/[0.08]">
+    <div class="mx-auto max-w-[1100px] border-t border-fg/[0.08]">
       {services.map((service, i) => (
-        <article id={service.slug} class="grid scroll-mt-[100px] gap-6 border-b border-white/[0.08] py-12 md:grid-cols-[80px_1fr_1fr] md:gap-10">
+        <article id={service.slug} class="grid scroll-mt-[100px] gap-6 border-b border-fg/[0.08] py-12 md:grid-cols-[80px_1fr_1fr] md:gap-10">
           <span class="font-sans text-[12px] font-medium text-brand">{String(i + 1).padStart(2, '0')}</span>
           <div>
             <h2 class="font-display text-[28px] font-light leading-tight">{service.title}</h2>
-            <p class="mt-4 text-body text-white/60">{service.description}</p>
+            <p class="mt-4 text-body text-fg/70">{service.description}</p>
           </div>
           <ul class="grid content-start gap-2 sm:grid-cols-2">
             {service.features.map((feature) => (
-              <li class="rounded-xl bg-white/[0.03] px-4 py-3 text-[13.5px] text-white/75 ring-1 ring-white/[0.06]">
+              <li class="rounded-xl bg-fg/[0.03] px-4 py-3 text-[13.5px] text-fg/75 ring-1 ring-fg/[0.06]">
                 {feature}
               </li>
             ))}

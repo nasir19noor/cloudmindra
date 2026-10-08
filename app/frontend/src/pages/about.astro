@@ -27,7 +27,7 @@ const beliefs = [
       <h1 class="max-w-[820px] text-balance font-display text-[38px] font-light leading-[1.15] md:text-display-xl">
         We help businesses build cloud and AI systems that work.
       </h1>
-      <p class="mt-6 max-w-[620px] text-body text-white/65 md:text-[16px]">
+      <p class="mt-6 max-w-[620px] text-body text-fg/72 md:text-[16px]">
         CloudMindra is a cloud and AI solutions company focused on helping businesses build, deploy, and scale modern
         infrastructure. We combine deep expertise in cloud platforms with practical AI integration to deliver systems that work.
       </p>
@@ -39,7 +39,7 @@ const beliefs = [
       <div class="card p-8">
         <p class="eyebrow">Our mission</p>
         <p class="mt-6 font-display text-title font-light">Enterprise-grade, for every size of business</p>
-        <p class="mt-3 text-body text-white/60">
+        <p class="mt-3 text-body text-fg/70">
           To make enterprise-grade cloud infrastructure and AI capabilities accessible to businesses of all sizes. We believe
           technology should be an accelerator, not a bottleneck.
         </p>
@@ -47,7 +47,7 @@ const beliefs = [
       <div class="card p-8">
         <p class="eyebrow">Our approach</p>
         <p class="mt-6 font-display text-title font-light">Business goals first, technology second</p>
-        <p class="mt-3 text-body text-white/60">
+        <p class="mt-3 text-body text-fg/70">
           Every solution we build is designed for production — reliable, maintainable, and cost-effective. No
           overengineering, no vendor lock-in.
         </p>
@@ -58,12 +58,12 @@ const beliefs = [
   <section class="px-6 py-[90px]">
     <div class="mx-auto max-w-[1100px]">
       <SectionHeader eyebrow="Principles" title="What we believe." />
-      <div class="mt-12 grid gap-px overflow-hidden rounded-3xl bg-white/[0.06] ring-1 ring-white/[0.06] md:grid-cols-3">
+      <div class="mt-12 grid gap-px overflow-hidden rounded-3xl bg-fg/[0.06] ring-1 ring-fg/[0.06] md:grid-cols-3">
         {beliefs.map((b, i) => (
-          <div class="bg-ink p-8">
+          <div class="bg-canvas p-8">
             <span class="font-sans text-[12px] font-medium text-brand">0{i + 1}</span>
             <h3 class="mt-8 font-display text-title font-light">{b.title}</h3>
-            <p class="mt-3 text-body text-white/55">{b.body}</p>
+            <p class="mt-3 text-body text-fg/65">{b.body}</p>
           </div>
         ))}
       </div>

@@ -5,7 +5,7 @@ const API_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cloudmindra.com';
 <section class="relative overflow-hidden px-6 pb-[110px] pt-[150px] md:pt-[180px]">
   <div
     class="pointer-events-none absolute -right-40 top-40 h-[420px] w-[620px]"
-    style="background:radial-gradient(closest-side, rgba(194,46,53,0.35) 25%, rgba(255,107,53,0.12) 60%, rgba(255,107,53,0) 100%);filter:blur(40px)"
+    style="background:radial-gradient(closest-side, rgba(255,138,77,0.22) 25%, rgba(255,179,136,0.1) 60%, rgba(255,107,53,0) 100%);filter:blur(40px)"
     aria-hidden="true"
   >
   </div>
@@ -14,25 +14,25 @@ const API_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cloudmindra.com';
     <div>
       <p class="eyebrow mb-5">Contact</p>
       <h1 class="text-balance font-display text-[38px] font-light leading-[1.15] md:text-display">Let's talk about your project.</h1>
-      <p class="mt-6 max-w-[420px] text-body text-white/65">
+      <p class="mt-6 max-w-[420px] text-body text-fg/72">
         Tell us about your project and we'll get back to you within 24 hours.
       </p>
-      <dl class="mt-12 space-y-6 border-t border-white/[0.08] pt-8">
+      <dl class="mt-12 space-y-6 border-t border-fg/[0.08] pt-8">
         <div>
           <dt class="eyebrow">Email</dt>
           <dd class="mt-2 text-body">
-            <a href="mailto:hi@cloudmindra.com" class="text-white/80 transition-colors hover:text-white">hi@cloudmindra.com</a>
+            <a href="mailto:hi@cloudmindra.com" class="text-fg/80 transition-colors hover:text-fg">hi@cloudmindra.com</a>
           </dd>
         </div>
         <div>
           <dt class="eyebrow">WhatsApp</dt>
           <dd class="mt-2 text-body">
-            <a href="https://wa.me/6285288358561" target="_blank" rel="noopener" class="text-white/80 transition-colors hover:text-white">+62 852-8835-8561</a>
+            <a href="https://wa.me/6285288358561" target="_blank" rel="noopener" class="text-fg/80 transition-colors hover:text-fg">+62 852-8835-8561</a>
           </dd>
         </div>
         <div>
           <dt class="eyebrow">Response time</dt>
-          <dd class="mt-2 text-body text-white/80">Within 24 hours</dd>
+          <dd class="mt-2 text-body text-fg/80">Within 24 hours</dd>
         </div>
       </dl>
     </div>
@@ -40,26 +40,26 @@ const API_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cloudmindra.com';
     <form id="contact-form" class="card space-y-5 p-6 md:p-8">
       <div class="grid gap-5 md:grid-cols-2">
         <div>
-          <label for="name" class="mb-2 block text-caption font-medium text-white/60">Name *</label>
+          <label for="name" class="mb-2 block text-caption font-medium text-fg/70">Name *</label>
           <input type="text" id="name" name="name" required class="field" />
         </div>
         <div>
-          <label for="email" class="mb-2 block text-caption font-medium text-white/60">Your email *</label>
+          <label for="email" class="mb-2 block text-caption font-medium text-fg/70">Your email *</label>
           <input type="email" id="email" name="email" required autocomplete="email" placeholder="you@company.com" class="field" aria-describedby="email-hint" />
-          <p id="email-hint" class="mt-1.5 text-[12px] text-white/40">We'll reply to this address.</p>
+          <p id="email-hint" class="mt-1.5 text-[12px] text-fg/55">We'll reply to this address.</p>
         </div>
       </div>
       <div>
-        <label for="company" class="mb-2 block text-caption font-medium text-white/60">Company</label>
+        <label for="company" class="mb-2 block text-caption font-medium text-fg/70">Company</label>
         <input type="text" id="company" name="company" class="field" />
       </div>
       <div>
-        <label for="message" class="mb-2 block text-caption font-medium text-white/60">Message *</label>
+        <label for="message" class="mb-2 block text-caption font-medium text-fg/70">Message *</label>
         <textarea id="message" name="message" rows="5" required class="field resize-none"></textarea>
       </div>
       <button
         type="submit"
-        class="h-[44px] w-full rounded-full bg-white text-body font-medium text-black transition-opacity hover:opacity-90 disabled:opacity-60"
+        class="h-[44px] w-full rounded-full bg-fg text-body font-medium text-canvas transition-opacity hover:opacity-90 disabled:opacity-60"
       >
         Send Message
       </button>
@@ -93,20 +93,20 @@ const API_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cloudmindra.com';
 
       if (res.status === 422) {
         status.textContent = 'Please check your details — a valid email address is required so we can reply.';
-        status.className = 'text-center text-caption text-red-400';
+        status.className = 'text-center text-caption text-red-600';
         return;
       }
 
       if (res.ok) {
         status.textContent = 'Message sent successfully! We\'ll be in touch soon.';
-        status.className = 'text-center text-caption text-emerald-400';
+        status.className = 'text-center text-caption text-emerald-600';
         form.reset();
       } else {
         throw new Error('Failed to send');
       }
     } catch {
       status.textContent = 'Something went wrong. Please try again or email us directly.';
-      status.className = 'text-center text-caption text-red-400';
+      status.className = 'text-center text-caption text-red-600';
     } finally {
       btn.disabled = false;
       btn.textContent = 'Send Message';
