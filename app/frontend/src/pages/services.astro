@@ -1,89 +1,47 @@
 ---
 import Layout from '../layouts/Layout.astro';
-
-const services = [
-  {
-    icon: '☁️',
-    title: 'Cloud Infrastructure',
-    description: 'Design, build, and manage cloud environments on AWS, GCP, and Azure. We architect solutions that are scalable, cost-effective, and production-ready.',
-    features: ['Multi-cloud architecture', 'Cloud migration', 'Cost optimization', 'High availability design'],
-  },
-  {
-    icon: '🤖',
-    title: 'AI & Machine Learning',
-    description: 'Custom AI solutions from concept to production. We integrate LLMs, build predictive models, and deploy intelligent automation into your workflows.',
-    features: ['LLM integration', 'Custom model training', 'AI-powered automation', 'Predictive analytics'],
-  },
-  {
-    icon: '🚀',
-    title: 'DevOps & Automation',
-    description: 'End-to-end CI/CD pipelines, Infrastructure as Code, container orchestration, and observability. We automate your entire development lifecycle.',
-    features: ['CI/CD pipelines', 'Terraform / IaC', 'Kubernetes', 'Monitoring & alerting'],
-  },
-  {
-    icon: '📊',
-    title: 'Data Engineering',
-    description: 'Build data pipelines, analytics platforms, and data lakes. We help you collect, process, and derive actionable insights from your data.',
-    features: ['ETL pipelines', 'Data lake architecture', 'Real-time analytics', 'Data governance'],
-  },
-  {
-    icon: '🔒',
-    title: 'Cloud Security',
-    description: 'Comprehensive security strategy including IAM, compliance frameworks, vulnerability assessment, and security automation.',
-    features: ['IAM & access control', 'Compliance (SOC2, ISO)', 'Vulnerability scanning', 'Incident response'],
-  },
-  {
-    icon: '💡',
-    title: 'Consulting',
-    description: 'Strategic guidance for your cloud journey. From initial assessment to technology roadmap, we help you make informed decisions.',
-    features: ['Architecture review', 'Cloud strategy', 'Cost analysis', 'Technology roadmap'],
-  },
-];
+import Cta from '../components/Cta.astro';
+import { services } from '../data/services';
 ---
 
 <Layout title="Services" description="Cloud infrastructure, AI, DevOps, and consulting services by CloudMindra.">
-  <section class="py-20">
-    <div class="max-w-6xl mx-auto px-6">
-      <h1 class="text-4xl font-bold text-center mb-4">Our Services</h1>
-      <p class="text-gray-500 text-center mb-16 max-w-2xl mx-auto">
+  <section class="relative overflow-hidden px-6 pb-16 pt-[150px] md:pt-[180px]">
+    <div class="dot-grid pointer-events-none absolute inset-0 [mask-image:radial-gradient(ellipse_at_top,black,transparent_70%)]" aria-hidden="true"></div>
+    <div class="relative mx-auto max-w-[1100px]">
+      <p class="eyebrow mb-5">Services</p>
+      <h1 class="max-w-[760px] text-balance font-display text-[38px] font-light leading-[1.15] md:text-display-xl">
+        Everything you need to build, run, and scale.
+      </h1>
+      <p class="mt-6 max-w-[520px] text-body text-white/65 md:text-[16px]">
         Comprehensive cloud and AI services designed to help you build, deploy, and scale with confidence.
       </p>
+    </div>
+  </section>
 
-      <div class="space-y-12">
-        {services.map((service) => (
-          <div class="bg-white border border-gray-100 rounded-xl p-8 shadow-sm hover:shadow-md transition-shadow">
-            <div class="flex flex-col md:flex-row gap-6">
-              <div class="text-5xl">{service.icon}</div>
-              <div class="flex-1">
-                <h2 class="text-2xl font-bold mb-3">{service.title}</h2>
-                <p class="text-gray-600 mb-4 leading-relaxed">{service.description}</p>
-                <div class="flex flex-wrap gap-2">
-                  {service.features.map((feature) => (
-                    <span class="bg-blue-50 text-accent text-sm font-medium px-3 py-1 rounded-full">
-                      {feature}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
+  <section class="px-6 pb-[90px]">
+    <div class="mx-auto max-w-[1100px] border-t border-white/[0.08]">
+      {services.map((service, i) => (
+        <article id={service.slug} class="grid scroll-mt-[100px] gap-6 border-b border-white/[0.08] py-12 md:grid-cols-[80px_1fr_1fr] md:gap-10">
+          <span class="font-sans text-[12px] font-medium text-brand">{String(i + 1).padStart(2, '0')}</span>
+          <div>
+            <h2 class="font-display text-[28px] font-light leading-tight">{service.title}</h2>
+            <p class="mt-4 text-body text-white/60">{service.description}</p>
           </div>
-        ))}
-      </div>
+          <ul class="grid content-start gap-2 sm:grid-cols-2">
+            {service.features.map((feature) => (
+              <li class="rounded-xl bg-white/[0.03] px-4 py-3 text-[13.5px] text-white/75 ring-1 ring-white/[0.06]">
+                {feature}
+              </li>
+            ))}
+          </ul>
+        </article>
+      ))}
     </div>
   </section>
 
-  <section class="py-16 bg-primary text-white">
-    <div class="max-w-4xl mx-auto px-6 text-center">
-      <h2 class="text-3xl font-bold mb-4">Need a Custom Solution?</h2>
-      <p class="text-gray-300 mb-8">
-        Every business is different. Tell us about your challenges and we'll design a solution that fits.
-      </p>
-      <a
-        href="/contact"
-        class="inline-block bg-accent hover:bg-accent-dark text-white font-medium px-8 py-3.5 rounded-lg transition-colors"
-      >
-        Contact Us
-      </a>
-    </div>
-  </section>
+  <Cta
+    title="Need a custom solution?"
+    description="Every business is different. Tell us about your challenges and we'll design a solution that fits."
+    label="Contact Us"
+  />
 </Layout>

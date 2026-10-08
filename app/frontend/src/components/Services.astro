@@ -1,51 +1,37 @@
 ---
-const services = [
-  {
-    icon: '☁️',
-    title: 'Cloud Infrastructure',
-    description: 'AWS, GCP, and Azure architecture design, migration, and management.',
-  },
-  {
-    icon: '🤖',
-    title: 'AI & Machine Learning',
-    description: 'Custom AI solutions, model deployment, and LLM integration.',
-  },
-  {
-    icon: '🚀',
-    title: 'DevOps & Automation',
-    description: 'CI/CD pipelines, Infrastructure as Code, and container orchestration.',
-  },
-  {
-    icon: '📊',
-    title: 'Data Engineering',
-    description: 'Data pipelines, analytics platforms, and data lake architecture.',
-  },
-  {
-    icon: '🔒',
-    title: 'Cloud Security',
-    description: 'IAM strategy, compliance frameworks, and vulnerability assessment.',
-  },
-  {
-    icon: '💡',
-    title: 'Consulting',
-    description: 'Cloud strategy, cost optimization, and architecture review.',
-  },
-];
+import SectionHeader from './SectionHeader.astro';
+import { services } from '../data/services';
 ---
 
-<section class="py-20 bg-gray-50">
-  <div class="max-w-6xl mx-auto px-6">
-    <h2 class="text-3xl font-bold text-center mb-4">What We Do</h2>
-    <p class="text-gray-500 text-center mb-12 max-w-2xl mx-auto">
-      End-to-end cloud and AI services to help you build, deploy, and scale with confidence.
-    </p>
-    <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+<section id="services" class="scroll-mt-[90px] px-6 py-[90px] md:py-[120px]">
+  <div class="mx-auto max-w-[1100px]">
+    <SectionHeader
+      eyebrow="What we do"
+      title="End-to-end services for your cloud and AI stack."
+      description="One team across infrastructure, data, AI, and security — so nothing falls between the cracks."
+    />
+
+    <div class="mt-14 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {services.map((service) => (
-        <div class="bg-white rounded-xl p-8 shadow-sm hover:shadow-md transition-shadow">
-          <div class="text-4xl mb-4">{service.icon}</div>
-          <h3 class="text-xl font-semibold mb-3">{service.title}</h3>
-          <p class="text-gray-500 leading-relaxed">{service.description}</p>
-        </div>
+        <a href={`/services#${service.slug}`} class="card group relative flex flex-col p-7 transition hover:bg-surface-2 hover:ring-white/[0.12]">
+          <div
+            class="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+            style="background:radial-gradient(closest-side, rgba(255,107,53,0.18), transparent);filter:blur(10px)"
+            aria-hidden="true"
+          >
+          </div>
+          <h3 class="relative text-title font-medium">{service.headline}</h3>
+          <p class="relative mt-1 text-caption text-white/45">{service.title}</p>
+          <p class="relative mt-5 text-body text-white/70">{service.summary}</p>
+          <ul class="relative mt-6 space-y-2 border-t border-white/[0.06] pt-5">
+            {service.features.map((f) => (
+              <li class="flex items-center gap-2.5 text-[13.5px] text-white/60 transition-colors group-hover:text-white/80">
+                <span class="text-brand/80">→</span>
+                {f}
+              </li>
+            ))}
+          </ul>
+        </a>
       ))}
     </div>
   </div>

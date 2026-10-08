@@ -1,25 +1,97 @@
-<section class="bg-primary text-white py-24">
-  <div class="max-w-6xl mx-auto px-6 text-center">
-    <h1 class="text-4xl md:text-6xl font-bold leading-tight mb-6">
-      Cloud & AI Solutions<br />
-      <span class="text-accent">Built for Scale</span>
-    </h1>
-    <p class="text-gray-300 text-lg md:text-xl max-w-2xl mx-auto mb-10">
-      We design, build, and manage cloud infrastructure and AI systems that power modern businesses. From architecture to deployment, we handle the complexity.
+---
+import GlowButton from './GlowButton.astro';
+
+const pillars = [
+  {
+    label: 'Design',
+    title: 'Architecture that fits the business',
+    body: 'We start from your goals and map the cloud, data, and AI pieces that will actually move them.',
+  },
+  {
+    label: 'Build',
+    title: 'Production-ready from day one',
+    body: 'Infrastructure as Code, CI/CD, and security baked in — no hand-built servers, no surprises.',
+  },
+  {
+    label: 'Operate',
+    title: 'Run, observe, and improve',
+    body: 'Monitoring, cost reviews, and ongoing tuning so your platform keeps up as you grow.',
+  },
+];
+---
+
+<section class="relative overflow-hidden pb-[110px] pt-[150px] md:pb-[140px] md:pt-[190px]">
+  <!-- background glow -->
+  <div
+    class="pointer-events-none absolute left-1/2 top-[300px] h-[420px] w-[900px] -translate-x-1/2 opacity-60 md:top-[340px]"
+    style="background:radial-gradient(closest-side, rgba(194,46,53,0.55) 20%, rgba(255,107,53,0.18) 60%, rgba(255,107,53,0) 100%);filter:blur(40px)"
+    aria-hidden="true"
+  >
+  </div>
+  <div class="dot-grid pointer-events-none absolute inset-0 [mask-image:radial-gradient(ellipse_at_top,black,transparent_70%)]" aria-hidden="true"></div>
+
+  <div class="relative mx-auto max-w-[1100px] px-6 text-center">
+    <p class="eyebrow fade-up mb-6 inline-flex items-center gap-2 rounded-full px-3 py-1.5 ring-1 ring-white/10">
+      <span class="h-1.5 w-1.5 rounded-full bg-brand"></span>
+      Cloud · AI · DevOps
     </p>
-    <div class="flex flex-col sm:flex-row gap-4 justify-center">
-      <a
-        href="/contact"
-        class="bg-accent hover:bg-accent-dark text-white font-medium px-8 py-3.5 rounded-lg transition-colors"
+    <h1
+      class="fade-up mx-auto max-w-[820px] text-balance font-display text-[38px] font-light leading-[1.15] sm:text-[46px] md:text-display-xl"
+      style="animation-delay:.1s"
+    >
+      The cloud &amp; AI layer for businesses built to scale
+    </h1>
+    <p class="fade-up mx-auto mt-6 max-w-[520px] text-body text-white/70 md:text-[16px]" style="animation-delay:.2s">
+      CloudMindra designs, builds, and manages the cloud infrastructure and AI systems behind modern companies.
+      From architecture to deployment, we handle the complexity.
+    </p>
+
+    <!-- CTA wrapped in orbit lines -->
+    <div class="fade-up relative mt-12 flex items-center justify-center" style="animation-delay:.3s">
+      <svg
+        class="pointer-events-none absolute left-1/2 top-1/2 hidden w-[1000px] -translate-x-1/2 -translate-y-1/2 md:block"
+        viewBox="0 0 1000 120"
+        fill="none"
+        aria-hidden="true"
       >
-        Start a Project
-      </a>
-      <a
-        href="/services"
-        class="border border-gray-600 hover:border-gray-400 text-white font-medium px-8 py-3.5 rounded-lg transition-colors"
-      >
-        Our Services
-      </a>
+        <defs>
+          <linearGradient id="orbit-outer" x1="0" x2="1000" y1="0" y2="0" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#fff" stop-opacity="0"></stop>
+            <stop offset=".5" stop-color="#fff" stop-opacity=".35"></stop>
+            <stop offset="1" stop-color="#fff" stop-opacity="0"></stop>
+          </linearGradient>
+          <linearGradient id="orbit-inner" x1="0" x2="1000" y1="0" y2="0" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#ff6b35" stop-opacity="0"></stop>
+            <stop offset=".5" stop-color="#ff6b35" stop-opacity=".5"></stop>
+            <stop offset="1" stop-color="#ff6b35" stop-opacity="0"></stop>
+          </linearGradient>
+        </defs>
+        <ellipse class="orbit-line" cx="500" cy="60" rx="460" ry="54" stroke="url(#orbit-outer)"></ellipse>
+        <ellipse class="orbit-line" style="animation-delay:.25s" cx="500" cy="60" rx="460" ry="32" stroke="url(#orbit-inner)"></ellipse>
+      </svg>
+      <div class="relative flex flex-col items-center gap-4 sm:flex-row sm:gap-7">
+        <GlowButton href="/contact">Start a Project</GlowButton>
+        <a href="#services" class="group inline-flex items-center gap-1.5 text-body font-medium text-white/70 transition-colors hover:text-white">
+          See what we do
+          <span class="transition-transform group-hover:translate-y-0.5">↓</span>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- three pillars -->
+  <div class="relative mx-auto mt-[110px] max-w-[1100px] px-6 md:mt-[140px]">
+    <div class="grid overflow-hidden rounded-3xl bg-white/[0.06] ring-1 ring-white/[0.06] md:grid-cols-3" style="gap:1px">
+      {pillars.map((p, i) => (
+        <div class="group relative bg-ink p-7 transition-colors hover:bg-surface md:p-8">
+          <div class="flex items-center gap-3">
+            <span class="font-sans text-[11px] font-medium text-brand">0{i + 1}</span>
+            <span class="eyebrow">{p.label}</span>
+          </div>
+          <p class="mt-8 font-display text-title font-light text-white/85 transition-colors group-hover:text-white">{p.title}</p>
+          <p class="mt-3 text-body text-white/50 transition-colors group-hover:text-white/65">{p.body}</p>
+        </div>
+      ))}
     </div>
   </div>
 </section>

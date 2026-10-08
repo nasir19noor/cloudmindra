@@ -1,26 +1,34 @@
 ---
 const navLinks = [
   { href: '/', label: 'Home' },
-  { href: '/about', label: 'About' },
   { href: '/services', label: 'Services' },
+  { href: '/about', label: 'About' },
   { href: '/contact', label: 'Contact' },
 ];
-const currentPath = Astro.url.pathname;
+const currentPath = Astro.url.pathname.replace(/\/$/, '') || '/';
 ---
 
-<header class="bg-primary text-white sticky top-0 z-50">
-  <nav class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-    <a href="/" class="text-xl font-bold tracking-tight">
-      Cloud<span class="text-accent">Mindra</span>
+<header class="fixed inset-x-0 top-0 z-50 px-3 pt-3 md:px-5 md:pt-4">
+  <nav
+    class="relative mx-auto flex h-[60px] max-w-[1100px] items-center justify-between rounded-full bg-[#141414]/70 px-5 ring-1 ring-white/[0.08] backdrop-blur-xl"
+  >
+    <a href="/" class="flex items-center gap-2.5 font-display text-[19px] font-normal tracking-tight">
+      <svg width="22" height="22" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <circle cx="16" cy="16" r="10" stroke="#ff6b35" stroke-width="2.5"></circle>
+        <circle cx="16" cy="16" r="3.5" fill="#fff"></circle>
+      </svg>
+      CloudMindra
     </a>
-    <ul class="hidden md:flex items-center gap-8">
+
+    <ul class="hidden items-center gap-8 md:flex">
       {navLinks.map((link) => (
         <li>
           <a
             href={link.href}
+            aria-current={currentPath === link.href ? 'page' : undefined}
             class:list={[
-              'text-sm font-medium transition-colors hover:text-accent',
-              currentPath === link.href ? 'text-accent' : 'text-gray-300',
+              'text-body font-medium transition-colors hover:text-white',
+              currentPath === link.href ? 'text-white' : 'text-white/50',
             ]}
           >
             {link.label}
@@ -28,11 +36,34 @@ const currentPath = Astro.url.pathname;
         </li>
       ))}
     </ul>
-    <a
-      href="/contact"
-      class="hidden md:inline-block bg-accent hover:bg-accent-dark text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors"
-    >
-      Get Started
-    </a>
+
+    <a href="/contact" class="btn-secondary hidden h-[35px] md:inline-flex">Start a Project</a>
+
+    <details class="group md:hidden">
+      <summary
+        class="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full ring-1 ring-white/10 [&::-webkit-details-marker]:hidden"
+        aria-label="Toggle menu"
+      >
+        <svg class="group-open:hidden" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M2 5h12M2 11h12"></path>
+        </svg>
+        <svg class="hidden group-open:block" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M3 3l10 10M13 3L3 13"></path>
+        </svg>
+      </summary>
+      <div class="absolute inset-x-0 top-[70px] rounded-3xl bg-[#141414]/95 p-3 ring-1 ring-white/[0.08] backdrop-blur-xl">
+        {navLinks.map((link) => (
+          <a
+            href={link.href}
+            class:list={[
+              'block rounded-2xl px-4 py-3 text-body font-medium',
+              currentPath === link.href ? 'bg-white/[0.06] text-white' : 'text-white/60',
+            ]}
+          >
+            {link.label}
+          </a>
+        ))}
+      </div>
+    </details>
   </nav>
 </header>

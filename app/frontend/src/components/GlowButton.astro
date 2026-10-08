@@ -1,0 +1,19 @@
+---
+interface Props {
+  href: string;
+  class?: string;
+}
+
+const { href, class: className } = Astro.props;
+---
+
+<span class:list={['star-border', className]}>
+  <span class="star star-bottom" aria-hidden="true"></span>
+  <span class="star star-top" aria-hidden="true"></span>
+  <a
+    href={href}
+    class="relative z-[1] inline-flex h-[38px] items-center justify-center rounded-full bg-white px-6 text-body font-medium text-black transition-opacity hover:opacity-90"
+  >
+    <slot />
+  </a>
+</span>

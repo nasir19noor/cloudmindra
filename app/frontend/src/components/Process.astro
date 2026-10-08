@@ -1,0 +1,33 @@
+---
+import SectionHeader from './SectionHeader.astro';
+
+const steps = [
+  { title: 'Discover', body: 'We learn your goals, constraints, and current stack in a short working session.' },
+  { title: 'Design', body: 'A clear architecture and roadmap, with costs and trade-offs written down.' },
+  { title: 'Build', body: 'Infrastructure as Code, pipelines, and integrations delivered in small, reviewable steps.' },
+  { title: 'Launch', body: 'Cut-over with monitoring, alerting, and a rollback plan in place.' },
+  { title: 'Operate', body: 'Ongoing support, cost reviews, and improvements as your needs change.' },
+];
+---
+
+<section class="px-6 py-[90px] md:py-[120px]">
+  <div class="mx-auto max-w-[1100px]">
+    <SectionHeader
+      eyebrow="How we work"
+      title="From first call to production in five steps."
+      description="A predictable process with working software at every stage — not slide decks."
+    />
+
+    <ol class="mt-14 grid gap-px overflow-hidden rounded-3xl bg-white/[0.06] ring-1 ring-white/[0.06] md:grid-cols-5">
+      {steps.map((step, i) => (
+        <li class="relative bg-ink p-6 md:min-h-[230px]">
+          <span class="flex h-8 w-8 items-center justify-center rounded-full text-[12px] font-medium text-white/80 ring-1 ring-white/15">
+            {i + 1}
+          </span>
+          <p class="mt-8 font-display text-title font-light">{step.title}</p>
+          <p class="mt-2 text-[13.5px] text-white/50">{step.body}</p>
+        </li>
+      ))}
+    </ol>
+  </div>
+</section>

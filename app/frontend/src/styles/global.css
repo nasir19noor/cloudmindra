@@ -7,6 +7,102 @@
     scroll-behavior: smooth;
   }
   body {
-    @apply bg-white text-gray-800 antialiased;
+    @apply bg-ink text-white font-sans font-light antialiased;
+  }
+  ::selection {
+    @apply bg-brand/40 text-white;
+  }
+}
+
+@layer components {
+  .eyebrow {
+    @apply font-sans text-[11px] font-medium uppercase tracking-[0.14em] text-white/50;
+  }
+
+  .btn-secondary {
+    @apply inline-flex h-[38px] items-center justify-center gap-2 rounded-full bg-white/[0.06] px-5 text-body font-medium text-white ring-1 ring-white/10 transition-colors hover:bg-white/10;
+  }
+
+  .card {
+    @apply rounded-2xl bg-surface ring-1 ring-white/[0.06];
+  }
+
+  .field {
+    @apply w-full rounded-xl bg-white/[0.03] px-4 py-3 text-body font-normal text-white ring-1 ring-white/10 outline-none transition placeholder:text-white/30 focus:bg-white/[0.05] focus:ring-brand/60;
+  }
+}
+
+/* Star border: an orange glint that travels along the edge of the primary pill button */
+.star-border {
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+  border-radius: 9999px;
+  padding: 1px 0;
+}
+.star-border > .star {
+  position: absolute;
+  width: 300%;
+  height: 50%;
+  opacity: 0.7;
+  border-radius: 9999px;
+  background: radial-gradient(circle, theme('colors.brand.500'), transparent 10%);
+  animation-duration: 5s;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+.star-border > .star-bottom {
+  bottom: -11px;
+  right: -250%;
+  animation-name: star-bottom;
+}
+.star-border > .star-top {
+  top: -10px;
+  left: -250%;
+  animation-name: star-top;
+}
+@keyframes star-bottom {
+  0% { transform: translate(0%, 0%); opacity: 1; }
+  100% { transform: translate(-100%, 0%); opacity: 0; }
+}
+@keyframes star-top {
+  0% { transform: translate(0%, 0%); opacity: 1; }
+  100% { transform: translate(100%, 0%); opacity: 0; }
+}
+
+/* Orbit ellipses drawn around the hero CTA */
+.orbit-line {
+  stroke-dasharray: 2400;
+  stroke-dashoffset: 2400;
+  animation: orbit-draw 2.4s ease-out forwards;
+}
+@keyframes orbit-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+.fade-up {
+  opacity: 0;
+  transform: translateY(14px);
+  animation: fade-up 0.9s ease-out forwards;
+}
+@keyframes fade-up {
+  to { opacity: 1; transform: none; }
+}
+
+/* Faint dotted grid used behind section headers */
+.dot-grid {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .star-border > .star,
+  .orbit-line,
+  .fade-up {
+    animation: none;
+    opacity: 1;
+    transform: none;
+    stroke-dashoffset: 0;
   }
 }

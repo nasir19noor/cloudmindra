@@ -1,0 +1,32 @@
+---
+import GlowButton from './GlowButton.astro';
+
+interface Props {
+  title?: string;
+  description?: string;
+  label?: string;
+}
+
+const {
+  title = 'Ready to build something that scales?',
+  description = "Tell us where you are today and where you want to be. We'll map the path between.",
+  label = 'Start a Conversation',
+} = Astro.props;
+---
+
+<section class="px-6 pb-[110px] pt-[40px]">
+  <div class="relative mx-auto max-w-[1100px] overflow-hidden rounded-[32px] bg-surface px-6 py-20 text-center ring-1 ring-white/[0.06] md:py-24">
+    <div
+      class="pointer-events-none absolute -bottom-40 left-1/2 h-[360px] w-[760px] -translate-x-1/2"
+      style="background:radial-gradient(closest-side, rgba(194,46,53,0.5) 25%, rgba(255,107,53,0.2) 60%, rgba(255,107,53,0) 100%);filter:blur(30px)"
+      aria-hidden="true"
+    >
+    </div>
+    <div class="dot-grid pointer-events-none absolute inset-0 [mask-image:radial-gradient(ellipse_at_center,black,transparent_75%)]" aria-hidden="true"></div>
+    <div class="relative">
+      <h2 class="mx-auto max-w-[620px] text-balance font-display text-display-sm font-light md:text-display">{title}</h2>
+      <p class="mx-auto mt-5 max-w-[460px] text-body text-white/60">{description}</p>
+      <GlowButton href="/contact" class="mt-9">{label}</GlowButton>
+    </div>
+  </div>
+</section>

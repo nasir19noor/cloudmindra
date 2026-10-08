@@ -1,0 +1,48 @@
+---
+import SectionHeader from './SectionHeader.astro';
+
+const faqs = [
+  {
+    q: 'Which cloud providers do you work with?',
+    a: 'AWS, Google Cloud, and Azure. We also run workloads on VPS providers and hybrid setups when that is the better fit for cost or latency.',
+  },
+  {
+    q: 'Can you work with our existing team?',
+    a: 'Yes. Most engagements are collaborative — we pair with your engineers, document everything in code, and hand over cleanly so your team owns the result.',
+  },
+  {
+    q: 'How do you approach AI projects?',
+    a: 'We start with a concrete business problem and a measurable outcome, then pick the simplest model or LLM integration that solves it reliably in production.',
+  },
+  {
+    q: 'Do you offer ongoing support after launch?',
+    a: 'We offer monthly operations retainers covering monitoring, incident response, upgrades, and regular cost and security reviews.',
+  },
+  {
+    q: 'How do we get started?',
+    a: 'Send us a message with a short description of your project. We will reply within 24 hours to set up a call.',
+  },
+];
+---
+
+<section class="px-6 py-[90px] md:py-[120px]">
+  <div class="mx-auto max-w-[1100px]">
+    <SectionHeader title="Frequently asked questions" description="Something else on your mind? Reach out and we will answer directly." />
+
+    <div class="mt-12 divide-y divide-white/[0.08] border-y border-white/[0.08]">
+      {faqs.map((item) => (
+        <details class="group py-6">
+          <summary class="flex cursor-pointer list-none items-center justify-between gap-6 text-[16px] font-normal text-white/85 transition-colors hover:text-white [&::-webkit-details-marker]:hidden">
+            {item.q}
+            <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full ring-1 ring-white/15 transition-transform group-open:rotate-45">
+              <svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                <path d="M5 0v10M0 5h10"></path>
+              </svg>
+            </span>
+          </summary>
+          <p class="mt-4 max-w-[720px] text-body text-white/55">{item.a}</p>
+        </details>
+      ))}
+    </div>
+  </div>
+</section>
