@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
 import uuid
@@ -6,12 +6,17 @@ import uuid
 from database import get_db
 from models import ContactRequest, ContactResponse
 import db_models
+from mailer import send_contact_email
 
 router = APIRouter(prefix="/api/contact", tags=["contact"])
 
 
 @router.post("", response_model=ContactResponse)
-async def submit_contact(request: ContactRequest, db: Session = Depends(get_db)):
+async def submit_contact(
+    request: ContactRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     submission = db_models.ContactSubmission(
         id=str(uuid.uuid4()),
         name=request.name,
@@ -23,6 +28,13 @@ async def submit_contact(request: ContactRequest, db: Session = Depends(get_db))
     db.add(submission)
     db.commit()
     db.refresh(submission)
+    background_tasks.add_task(
+        send_contact_email,
+        submission.name,
+        submission.email,
+        submission.company,
+        submission.message,
+    )
     return ContactResponse(
         id=submission.id,
         name=submission.name,
