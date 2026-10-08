@@ -11,26 +11,9 @@ services:
   backend:
     build: ./app/backend
     container_name: cloudmindra-backend
-    ports:
-      - "11001:11001"
+    # host network so the backend reaches the host PostgreSQL on localhost:5432
+    # and listens on host port 11001 directly
+    network_mode: host
     env_file:
       - ./app/backend/.env
-    depends_on:
-      - db
     restart: unless-stopped
-
-  db:
-    image: postgres:16-alpine
-    container_name: cloudmindra-db
-    ports:
-      - "127.0.0.1:5432:5432"
-    environment:
-      POSTGRES_DB: cloudmindra
-      POSTGRES_USER: cloudmindra
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    restart: unless-stopped
-
-volumes:
-  pgdata:
