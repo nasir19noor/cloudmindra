@@ -1,0 +1,43 @@
+name: Deploy CloudMindra
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/frontend/**'
+      - 'app/backend/**'
+      - 'docker-compose.yml'
+      - '.github/workflows/deploy.yml'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Download .env from S3
+        working-directory: app/backend
+        run: aws s3 cp s3://cloudmindra.com/backend/.env .env
+
+      - name: Deploy to Contabo
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.CONTABO_HOST }}
+          username: ${{ secrets.CONTABO_USER }}
+          key: ${{ secrets.CONTABO_SSH_KEY }}
+          script: |
+            cd /opt/cloudmindra
+            git pull origin main
+            docker compose up -d --build

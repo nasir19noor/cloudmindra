@@ -1,0 +1,89 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+const services = [
+  {
+    icon: '☁️',
+    title: 'Cloud Infrastructure',
+    description: 'Design, build, and manage cloud environments on AWS, GCP, and Azure. We architect solutions that are scalable, cost-effective, and production-ready.',
+    features: ['Multi-cloud architecture', 'Cloud migration', 'Cost optimization', 'High availability design'],
+  },
+  {
+    icon: '🤖',
+    title: 'AI & Machine Learning',
+    description: 'Custom AI solutions from concept to production. We integrate LLMs, build predictive models, and deploy intelligent automation into your workflows.',
+    features: ['LLM integration', 'Custom model training', 'AI-powered automation', 'Predictive analytics'],
+  },
+  {
+    icon: '🚀',
+    title: 'DevOps & Automation',
+    description: 'End-to-end CI/CD pipelines, Infrastructure as Code, container orchestration, and observability. We automate your entire development lifecycle.',
+    features: ['CI/CD pipelines', 'Terraform / IaC', 'Kubernetes', 'Monitoring & alerting'],
+  },
+  {
+    icon: '📊',
+    title: 'Data Engineering',
+    description: 'Build data pipelines, analytics platforms, and data lakes. We help you collect, process, and derive actionable insights from your data.',
+    features: ['ETL pipelines', 'Data lake architecture', 'Real-time analytics', 'Data governance'],
+  },
+  {
+    icon: '🔒',
+    title: 'Cloud Security',
+    description: 'Comprehensive security strategy including IAM, compliance frameworks, vulnerability assessment, and security automation.',
+    features: ['IAM & access control', 'Compliance (SOC2, ISO)', 'Vulnerability scanning', 'Incident response'],
+  },
+  {
+    icon: '💡',
+    title: 'Consulting',
+    description: 'Strategic guidance for your cloud journey. From initial assessment to technology roadmap, we help you make informed decisions.',
+    features: ['Architecture review', 'Cloud strategy', 'Cost analysis', 'Technology roadmap'],
+  },
+];
+---
+
+<Layout title="Services" description="Cloud infrastructure, AI, DevOps, and consulting services by CloudMindra.">
+  <section class="py-20">
+    <div class="max-w-6xl mx-auto px-6">
+      <h1 class="text-4xl font-bold text-center mb-4">Our Services</h1>
+      <p class="text-gray-500 text-center mb-16 max-w-2xl mx-auto">
+        Comprehensive cloud and AI services designed to help you build, deploy, and scale with confidence.
+      </p>
+
+      <div class="space-y-12">
+        {services.map((service) => (
+          <div class="bg-white border border-gray-100 rounded-xl p-8 shadow-sm hover:shadow-md transition-shadow">
+            <div class="flex flex-col md:flex-row gap-6">
+              <div class="text-5xl">{service.icon}</div>
+              <div class="flex-1">
+                <h2 class="text-2xl font-bold mb-3">{service.title}</h2>
+                <p class="text-gray-600 mb-4 leading-relaxed">{service.description}</p>
+                <div class="flex flex-wrap gap-2">
+                  {service.features.map((feature) => (
+                    <span class="bg-blue-50 text-accent text-sm font-medium px-3 py-1 rounded-full">
+                      {feature}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="py-16 bg-primary text-white">
+    <div class="max-w-4xl mx-auto px-6 text-center">
+      <h2 class="text-3xl font-bold mb-4">Need a Custom Solution?</h2>
+      <p class="text-gray-300 mb-8">
+        Every business is different. Tell us about your challenges and we'll design a solution that fits.
+      </p>
+      <a
+        href="/contact"
+        class="inline-block bg-accent hover:bg-accent-dark text-white font-medium px-8 py-3.5 rounded-lg transition-colors"
+      >
+        Contact Us
+      </a>
+    </div>
+  </section>
+</Layout>

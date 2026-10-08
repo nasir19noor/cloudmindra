@@ -1,0 +1,36 @@
+services:
+  frontend:
+    build: ./app/frontend
+    container_name: cloudmindra-frontend
+    ports:
+      - "11000:11000"
+    environment:
+      - PUBLIC_API_URL=https://api.cloudmindra.com
+    restart: unless-stopped
+
+  backend:
+    build: ./app/backend
+    container_name: cloudmindra-backend
+    ports:
+      - "11001:11001"
+    env_file:
+      - ./app/backend/.env
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    container_name: cloudmindra-db
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_DB: cloudmindra
+      POSTGRES_USER: cloudmindra
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  pgdata:
