@@ -29,7 +29,7 @@ jobs:
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::647459380434:role/github-actions-cloudmindra
+          role-to-assume: arn:aws:iam::647459380434:role/github-actions
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Verify AWS Identity

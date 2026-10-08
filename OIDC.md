@@ -34,7 +34,7 @@ This guide configures GitHub Actions to authenticate with AWS using OpenID Conne
    - **GitHub repository:** `*` (all repos)
    - **GitHub branch:** `*` (all branches)
 5. Click **Next**, attach the AWS managed policy **`AdministratorAccess`**
-6. Name the role: `github-actions-cloudmindra`
+6. Name the role: `github-actions`
 7. Create the role
 
 > **Note:** The GitHub organization field accepts only the account/org name (e.g. `nasir19noor`), not the full URL. Entering `https://github.com/nasir19noor` will fail with a validation error.
@@ -85,7 +85,7 @@ Push the workflow changes and check the GitHub Actions run:
 {
     "UserId": "AROA...:GitHubActions",
     "Account": "647459380434",
-    "Arn": "arn:aws:sts::647459380434:assumed-role/github-actions-cloudmindra/GitHubActions"
+    "Arn": "arn:aws:sts::647459380434:assumed-role/github-actions/GitHubActions"
 }
 ```
 
