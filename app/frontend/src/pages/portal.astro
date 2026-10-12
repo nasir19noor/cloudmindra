@@ -6,45 +6,66 @@ const API_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cloudmindra.com';
 
 <Layout title="Client Portal" description="Sign in to the CloudMindra client portal">
   <section class="px-6 pb-24 pt-36" data-api={API_URL} id="portal">
-    <div class="mx-auto max-w-[420px]">
-      <!-- Loading -->
-      <p id="view-loading" class="text-center text-body text-fg/60">Loading…</p>
+    <!-- Loading -->
+    <p id="view-loading" class="text-center text-body text-fg/60">Loading…</p>
 
-      <!-- Signed out -->
-      <div id="view-login" class="card hidden space-y-5 p-8">
+    <!-- Signed out -->
+    <div id="view-login" class="card mx-auto hidden max-w-[420px] space-y-5 p-8">
+      <div>
+        <p class="eyebrow mb-3">Client Portal</p>
+        <h1 class="font-display text-[28px] font-light leading-tight">Sign in to CloudMindra</h1>
+      </div>
+      <p id="login-error" class="hidden rounded-xl bg-red-50 px-4 py-3 text-caption text-red-700" role="alert"></p>
+      <a
+        href={`${API_URL}/api/auth/login?provider=google`}
+        class="flex h-[44px] w-full items-center justify-center gap-3 rounded-full bg-fg text-body font-medium text-canvas transition-opacity hover:opacity-90"
+      >
+        <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+          <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"></path>
+          <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"></path>
+          <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"></path>
+          <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"></path>
+        </svg>
+        Continue with Google
+      </a>
+      <a href={`${API_URL}/api/auth/login`} class="btn-secondary h-[44px] w-full">Sign in with email</a>
+    </div>
+
+    <!-- Signed in -->
+    <div id="view-account" class="mx-auto hidden max-w-[1000px]">
+      <div class="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
         <div>
           <p class="eyebrow mb-3">Client Portal</p>
-          <h1 class="font-display text-[28px] font-light leading-tight">Sign in to CloudMindra</h1>
+          <h1 class="font-display text-display-sm font-light">Welcome, <span id="user-name"></span></h1>
+          <p class="mt-2 text-body text-fg/60"><span id="user-email"></span> · signed in with <span id="user-provider"></span></p>
         </div>
-        <p id="login-error" class="hidden rounded-xl bg-red-50 px-4 py-3 text-caption text-red-700" role="alert"></p>
-        <a
-          href={`${API_URL}/api/auth/login?provider=google`}
-          class="flex h-[44px] w-full items-center justify-center gap-3 rounded-full bg-fg text-body font-medium text-canvas transition-opacity hover:opacity-90"
-        >
-          <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
-            <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"></path>
-            <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"></path>
-            <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"></path>
-            <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"></path>
-          </svg>
-          Continue with Google
-        </a>
-        <a href={`${API_URL}/api/auth/login`} class="btn-secondary h-[44px] w-full">Sign in with email</a>
+        <div class="flex gap-3">
+          <a id="admin-link" href="/admin" class="btn-secondary hidden h-[36px] text-caption">Admin dashboard</a>
+          <a href={`${API_URL}/api/auth/logout`} class="btn-secondary h-[36px] text-caption">Sign out</a>
+        </div>
       </div>
 
-      <!-- Signed in -->
-      <div id="view-account" class="card hidden space-y-6 p-8">
-        <div>
-          <p class="eyebrow mb-3">Client Portal</p>
-          <h1 class="font-display text-[28px] font-light leading-tight">Welcome, <span id="user-name"></span></h1>
+      <!-- Uptime monitors -->
+      <section class="card mt-8 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p class="eyebrow">Uptime monitors <span id="mon-count" class="text-fg/45"></span></p>
+            <p class="mt-2 text-caption text-fg/55">We check your sites around the clock and email you when they go down, recover, or an SSL certificate is about to expire.</p>
+          </div>
         </div>
-        <dl class="space-y-3 text-body">
-          <div class="flex justify-between gap-4"><dt class="text-fg/60">Email</dt><dd id="user-email" class="truncate"></dd></div>
-          <div class="flex justify-between gap-4"><dt class="text-fg/60">Signed in with</dt><dd id="user-provider"></dd></div>
-        </dl>
-        <a id="admin-link" href="/admin" class="hidden h-[40px] w-full items-center justify-center rounded-full bg-fg text-body font-medium text-canvas transition-opacity hover:opacity-90">Admin dashboard</a>
-        <a href={`${API_URL}/api/auth/logout`} class="btn-secondary h-[40px] w-full">Sign out</a>
-      </div>
+
+        <form id="mon-form" class="mt-6 grid gap-3 md:grid-cols-[1fr_1.6fr_auto_auto]">
+          <input name="name" required maxlength="100" placeholder="Name, e.g. Company website" class="field" aria-label="Monitor name" />
+          <input name="url" required maxlength="2048" placeholder="https://example.com" class="field" aria-label="URL to monitor" />
+          <select name="interval" class="field md:w-[150px]" aria-label="Check interval"></select>
+          <button type="submit" class="h-[46px] rounded-full bg-fg px-6 text-body font-medium text-canvas transition-opacity hover:opacity-90 disabled:opacity-60">
+            Add monitor
+          </button>
+        </form>
+        <p id="mon-error" class="mt-3 hidden text-caption text-red-600" role="alert"></p>
+
+        <div id="mon-list" class="mt-6 space-y-3"></div>
+      </section>
     </div>
   </section>
 </Layout>
@@ -53,39 +74,230 @@ const API_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cloudmindra.com';
   const root = document.getElementById('portal')!;
   const API = root.dataset.api as string;
 
+  type Check = { at: string; ok: boolean; ms: number | null; error: string | null };
+  type Monitor = {
+    id: string;
+    name: string;
+    url: string;
+    interval_minutes: number;
+    is_active: boolean;
+    status: 'pending' | 'up' | 'down' | 'paused';
+    last_checked_at: string | null;
+    last_status_code: number | null;
+    last_response_ms: number | null;
+    last_error: string | null;
+    down_since: string | null;
+    ssl_days_left: number | null;
+    ssl_warning: boolean;
+    uptime_24h: number | null;
+    recent: Check[];
+  };
+
   const ERRORS: Record<string, string> = {
     cancelled: 'Sign-in was cancelled.',
     expired: 'Your sign-in session expired. Please try again.',
     failed: 'Sign-in failed. Please try again.',
   };
 
-  function show(view: 'loading' | 'login' | 'account') {
-    for (const v of ['loading', 'login', 'account']) {
-      document.getElementById(`view-${v}`)!.classList.toggle('hidden', v !== view);
-    }
+  const $ = (id: string) => document.getElementById(id)!;
+
+  // Every customer-supplied value goes through esc() before touching innerHTML
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
+  function ago(iso: string | null) {
+    if (!iso) return 'never';
+    const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+    if (s < 60) return 'just now';
+    if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+    return `${Math.floor(s / 86400)} d ago`;
   }
 
-  const setText = (id: string, value: string) => (document.getElementById(id)!.textContent = value);
+  function show(view: 'loading' | 'login' | 'account') {
+    for (const v of ['loading', 'login', 'account']) $(`view-${v}`).classList.toggle('hidden', v !== view);
+  }
+
+  async function api(path: string, init: RequestInit = {}) {
+    return fetch(`${API}${path}`, {
+      credentials: 'include',
+      ...init,
+      headers: { 'Content-Type': 'application/json', ...(init.headers || {}) },
+    });
+  }
+
+  async function errorText(res: Response | null, fallback: string) {
+    if (!res) return 'Could not reach the server';
+    const body = await res.json().catch(() => ({}));
+    if (typeof body.detail === 'string') return body.detail;
+    if (Array.isArray(body.detail)) return body.detail[0]?.msg ?? fallback;
+    return fallback;
+  }
+
+  const STATUS = {
+    up: { label: 'Up', dot: 'bg-emerald-500', text: 'text-emerald-700' },
+    down: { label: 'Down', dot: 'bg-red-500', text: 'text-red-600' },
+    pending: { label: 'Checking…', dot: 'bg-fg/30', text: 'text-fg/60' },
+    paused: { label: 'Paused', dot: 'bg-fg/30', text: 'text-fg/60' },
+  };
+
+  function renderMonitor(m: Monitor) {
+    const st = STATUS[m.status];
+    const bars = m.recent.length
+      ? m.recent
+          .map(
+            (c) =>
+              `<span class="h-6 flex-1 rounded-[2px] ${c.ok ? 'bg-emerald-500/80' : 'bg-red-500/80'}" title="${esc(
+                new Date(c.at).toLocaleString(),
+              )} · ${c.ok ? esc(c.ms) + ' ms' : esc(c.error)}"></span>`,
+          )
+          .join('')
+      : '<span class="text-caption text-fg/45">No checks yet</span>';
+    const detail =
+      m.status === 'down'
+        ? `${esc(m.last_error)} · down since ${esc(ago(m.down_since))}`
+        : m.last_response_ms != null
+          ? `HTTP ${esc(m.last_status_code)} · ${esc(m.last_response_ms)} ms`
+          : esc(m.last_error ?? '');
+    const ssl =
+      m.ssl_days_left == null
+        ? ''
+        : `<span class="${m.ssl_warning ? 'font-medium text-amber-700' : ''}">SSL ${m.ssl_days_left < 0 ? 'expired' : `${esc(m.ssl_days_left)} days left`}</span>`;
+    return `
+      <article class="rounded-2xl p-5 ring-1 ring-fg/[0.08]" data-id="${esc(m.id)}">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="min-w-0">
+            <div class="flex items-center gap-2.5">
+              <span class="h-2.5 w-2.5 shrink-0 rounded-full ${st.dot}"></span>
+              <h3 class="truncate text-body font-medium">${esc(m.name)}</h3>
+              <span class="text-caption font-medium ${st.text}">${st.label}</span>
+            </div>
+            <a href="${esc(m.url)}" target="_blank" rel="noopener noreferrer" class="mt-1 block truncate text-caption text-fg/55 hover:underline">${esc(m.url)}</a>
+          </div>
+          <div class="flex shrink-0 gap-2">
+            <button data-action="check" class="btn-secondary h-[30px] px-3 text-[12px]" ${m.is_active ? '' : 'disabled'}>Check now</button>
+            <button data-action="toggle" class="btn-secondary h-[30px] px-3 text-[12px]">${m.is_active ? 'Pause' : 'Resume'}</button>
+            <button data-action="delete" class="btn-secondary h-[30px] px-3 text-[12px] text-red-600">Delete</button>
+          </div>
+        </div>
+        <div class="mt-4 flex items-end gap-[2px]" aria-label="Recent checks">${bars}</div>
+        <div class="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-caption text-fg/60">
+          <span>${detail}</span>
+          <span>Uptime 24h: <span class="font-medium text-fg">${m.uptime_24h == null ? '–' : esc(m.uptime_24h) + '%'}</span></span>
+          ${ssl}
+          <span>Every ${esc(m.interval_minutes)} min · checked ${esc(ago(m.last_checked_at))}</span>
+        </div>
+      </article>`;
+  }
+
+  let monitors: Monitor[] = [];
+
+  function renderMonitors(limit?: number) {
+    if (limit != null) $('mon-count').textContent = `· ${monitors.length} of ${limit}`;
+    $('mon-list').innerHTML = monitors.length
+      ? monitors.map(renderMonitor).join('')
+      : '<p class="rounded-2xl px-5 py-8 text-center text-caption text-fg/50 ring-1 ring-dashed ring-fg/10">Add your first URL above to start monitoring.</p>';
+  }
+
+  let limit = 10;
+
+  async function loadMonitors() {
+    const res = await api('/api/monitors').catch(() => null);
+    if (!res?.ok) return;
+    const data = await res.json();
+    monitors = data.monitors;
+    limit = data.limit;
+    const select = document.querySelector<HTMLSelectElement>('#mon-form select')!;
+    if (!select.options.length) {
+      select.innerHTML = data.intervals
+        .map((n: number) => `<option value="${n}" ${n === 5 ? 'selected' : ''}>Every ${n} min</option>`)
+        .join('');
+    }
+    renderMonitors(limit);
+  }
+
+  function showMonError(msg: string | null) {
+    const el = $('mon-error');
+    el.textContent = msg ?? '';
+    el.classList.toggle('hidden', !msg);
+  }
+
+  $('mon-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget as HTMLFormElement;
+    const btn = form.querySelector('button')!;
+    const data = new FormData(form);
+    btn.disabled = true;
+    btn.textContent = 'Checking…';
+    showMonError(null);
+    const res = await api('/api/monitors', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: data.get('name'),
+        url: data.get('url'),
+        interval_minutes: Number(data.get('interval')),
+      }),
+    }).catch(() => null);
+    btn.disabled = false;
+    btn.textContent = 'Add monitor';
+    if (!res?.ok) return showMonError(await errorText(res, 'Could not add monitor'));
+    (form.elements.namedItem('name') as HTMLInputElement).value = '';
+    (form.elements.namedItem('url') as HTMLInputElement).value = '';
+    monitors.push(await res.json());
+    renderMonitors(limit);
+  });
+
+  $('mon-list').addEventListener('click', async (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-action]');
+    const card = btn?.closest<HTMLElement>('[data-id]');
+    if (!btn || !card || btn.disabled) return;
+    const id = card.dataset.id!;
+    const m = monitors.find((x) => x.id === id)!;
+    const action = btn.dataset.action;
+    showMonError(null);
+
+    if (action === 'delete' && !confirm(`Stop monitoring ${m.name}? Its check history will be deleted.`)) return;
+    btn.disabled = true;
+
+    let res: Response | null = null;
+    if (action === 'check') res = await api(`/api/monitors/${id}/check`, { method: 'POST' }).catch(() => null);
+    if (action === 'toggle')
+      res = await api(`/api/monitors/${id}`, { method: 'PATCH', body: JSON.stringify({ is_active: !m.is_active }) }).catch(() => null);
+    if (action === 'delete') res = await api(`/api/monitors/${id}`, { method: 'DELETE' }).catch(() => null);
+
+    if (!res?.ok) {
+      btn.disabled = false;
+      return showMonError(await errorText(res, 'Something went wrong'));
+    }
+    if (action === 'delete') monitors = monitors.filter((x) => x.id !== id);
+    else {
+      const updated = await res.json();
+      monitors = monitors.map((x) => (x.id === id ? updated : x));
+    }
+    renderMonitors(limit);
+  });
 
   async function init() {
     const error = new URLSearchParams(location.search).get('error');
     if (error) {
-      const el = document.getElementById('login-error')!;
+      const el = $('login-error');
       el.textContent = ERRORS[error] ?? ERRORS.failed;
       el.classList.remove('hidden');
       history.replaceState(null, '', location.pathname);
     }
 
     try {
-      const res = await fetch(`${API}/api/auth/me`, { credentials: 'include' });
+      const res = await api('/api/auth/me');
       if (!res.ok) return show('login');
       const user = await res.json();
-      setText('user-name', user.name || user.email);
-      setText('user-email', user.email);
-      setText('user-provider', user.provider);
-      const adminLink = document.getElementById('admin-link')!;
-      adminLink.classList.toggle('hidden', !user.is_admin);
-      adminLink.classList.toggle('flex', user.is_admin);      show('account');
+      $('user-name').textContent = user.name || user.email;
+      $('user-email').textContent = user.email;
+      $('user-provider').textContent = user.provider;
+      $('admin-link').classList.toggle('hidden', !user.is_admin);
+      show('account');
+      await loadMonitors();
+      // Keep statuses fresh while the page is open
+      setInterval(() => document.visibilityState === 'visible' && loadMonitors(), 60_000);
     } catch {
       show('login');
     }

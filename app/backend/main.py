@@ -1,11 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
+import asyncio
 import uvicorn
 import os
 
 from database import init_db
-from routers import contact, services, blog, analytics, admin, auth
+import monitoring
+from routers import contact, services, blog, analytics, admin, auth, monitors
 
 app = FastAPI(
     title="CloudMindra API",
@@ -23,8 +25,11 @@ app.add_middleware(
 
 
 @app.on_event("startup")
-def on_startup():
+async def on_startup():
     init_db()
+    # Set MONITOR_WORKER=false to run the API without background uptime checks
+    if os.getenv("MONITOR_WORKER", "true").strip().lower() not in ("0", "false", "no"):
+        app.state.monitor_task = asyncio.create_task(monitoring.worker())
 
 
 @app.get("/")
@@ -43,6 +48,7 @@ app.include_router(blog.router)
 app.include_router(analytics.router)
 app.include_router(admin.router)
 app.include_router(auth.router)
+app.include_router(monitors.router)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=11001)

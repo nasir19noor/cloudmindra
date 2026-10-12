@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Integer, Boolean, Text, Float
+from sqlalchemy import Column, String, DateTime, Integer, Boolean, Text, Float, ForeignKey
 from sqlalchemy.sql import false, func
 from database import Base
 
@@ -67,3 +67,39 @@ class PageVisit(Base):
     path = Column(String(500), index=True)
     referrer = Column(Text, nullable=True)
     visited_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class Monitor(Base):
+    __tablename__ = "monitors"
+
+    id = Column(String, primary_key=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    url = Column(String(2048), nullable=False)
+    interval_minutes = Column(Integer, nullable=False, default=5)
+    is_active = Column(Boolean, nullable=False, default=True)
+    # pending (never checked), up, down
+    status = Column(String(10), nullable=False, default="pending")
+    consecutive_failures = Column(Integer, nullable=False, default=0)
+    down_since = Column(DateTime(timezone=True), nullable=True)
+    last_checked_at = Column(DateTime(timezone=True), nullable=True)
+    last_status_code = Column(Integer, nullable=True)
+    last_response_ms = Column(Integer, nullable=True)
+    last_error = Column(String(300), nullable=True)
+    ssl_expires_at = Column(DateTime(timezone=True), nullable=True)
+    ssl_checked_at = Column(DateTime(timezone=True), nullable=True)
+    # Expiry date we last warned about, so each certificate triggers one alert
+    ssl_alerted_for = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class MonitorCheck(Base):
+    __tablename__ = "monitor_checks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    monitor_id = Column(String, ForeignKey("monitors.id", ondelete="CASCADE"), nullable=False, index=True)
+    checked_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    ok = Column(Boolean, nullable=False)
+    status_code = Column(Integer, nullable=True)
+    response_ms = Column(Integer, nullable=True)
+    error = Column(String(300), nullable=True)

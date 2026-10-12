@@ -24,7 +24,7 @@ def get_db():
 
 
 def init_db():
-    from db_models import ContactSubmission, BlogPost, Service, PageVisit, User  # noqa: F401
+    from db_models import ContactSubmission, BlogPost, Service, PageVisit, User, Monitor, MonitorCheck  # noqa: F401
     Base.metadata.create_all(bind=engine)
 
     # create_all never alters existing tables, so add columns introduced later

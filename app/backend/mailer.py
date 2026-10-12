@@ -17,20 +17,41 @@ def _clean_header(value: str) -> str:
     return " ".join(value.splitlines()).strip()
 
 
-def send_contact_email(name: str, email: str, company: str | None, message: str) -> None:
-    """Forward a contact form submission to the CloudMindra inbox via Amazon SES SMTP."""
+def _send(msg: EmailMessage) -> bool:
+    """Send a message through Amazon SES SMTP. Returns False when SMTP is not configured or fails."""
     host = os.getenv("SMTP_HOST")
     port = int(os.getenv("SMTP_PORT", "587"))
     username = os.getenv("SMTP_USERNAME")
     password = os.getenv("SMTP_PASSWORD")
     secure = _env_bool("SMTP_SECURE")  # true: implicit TLS (465); false: STARTTLS (587)
     ignore_tls = _env_bool("SMTP_IGNORETLS")
-    mail_from = os.getenv("MAIL_FROM_ADDRESS", "hi@cloudmindra.com")
-    mail_to = os.getenv("MAIL_TO_ADDRESS", mail_from)
 
     if not host or not username or not password:
-        logger.warning("SMTP is not configured; skipping contact email")
-        return
+        logger.warning("SMTP is not configured; skipping email '%s'", msg["Subject"])
+        return False
+
+    context = ssl.create_default_context()
+    try:
+        if secure:
+            with smtplib.SMTP_SSL(host, port, context=context, timeout=20) as smtp:
+                smtp.login(username, password)
+                smtp.send_message(msg)
+        else:
+            with smtplib.SMTP(host, port, timeout=20) as smtp:
+                if not ignore_tls:
+                    smtp.starttls(context=context)
+                smtp.login(username, password)
+                smtp.send_message(msg)
+        return True
+    except Exception:
+        logger.exception("Failed to send email '%s'", msg["Subject"])
+        return False
+
+
+def send_contact_email(name: str, email: str, company: str | None, message: str) -> None:
+    """Forward a contact form submission to the CloudMindra inbox via Amazon SES SMTP."""
+    mail_from = os.getenv("MAIL_FROM_ADDRESS", "hi@cloudmindra.com")
+    mail_to = os.getenv("MAIL_TO_ADDRESS", mail_from)
 
     name = _clean_header(name)
     company = _clean_header(company) if company else None
@@ -47,18 +68,16 @@ def send_contact_email(name: str, email: str, company: str | None, message: str)
         f"\n{message}\n"
     )
 
-    context = ssl.create_default_context()
-    try:
-        if secure:
-            with smtplib.SMTP_SSL(host, port, context=context, timeout=20) as smtp:
-                smtp.login(username, password)
-                smtp.send_message(msg)
-        else:
-            with smtplib.SMTP(host, port, timeout=20) as smtp:
-                if not ignore_tls:
-                    smtp.starttls(context=context)
-                smtp.login(username, password)
-                smtp.send_message(msg)
+    if _send(msg):
         logger.info("Contact email sent for %s", email)
-    except Exception:
-        logger.exception("Failed to send contact email for %s", email)
+
+
+def send_alert_email(to: str, subject: str, body: str) -> bool:
+    """Send a monitoring alert to a customer."""
+    mail_from = os.getenv("MAIL_FROM_ADDRESS", "hi@cloudmindra.com")
+    msg = EmailMessage()
+    msg["From"] = formataddr(("CloudMindra Monitoring", mail_from))
+    msg["To"] = to
+    msg["Subject"] = _clean_header(subject)
+    msg.set_content(body)
+    return _send(msg)
