@@ -74,7 +74,8 @@ def send_contact_email(name: str, email: str, company: str | None, message: str)
 
 def send_alert_email(to: str, subject: str, body: str) -> bool:
     """Send a monitoring alert to a customer."""
-    mail_from = os.getenv("MAIL_FROM_ADDRESS", "hi@cloudmindra.com")
+    # Separate from MAIL_FROM_ADDRESS so customer replies do not land in the hi@ inbox
+    mail_from = os.getenv("ALERT_FROM_ADDRESS", "no-reply@cloudmindra.com")
     msg = EmailMessage()
     msg["From"] = formataddr(("CloudMindra Monitoring", mail_from))
     msg["To"] = to
