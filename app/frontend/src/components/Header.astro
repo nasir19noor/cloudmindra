@@ -37,7 +37,10 @@ const currentPath = Astro.url.pathname.replace(/\/$/, '') || '/';
       ))}
     </ul>
 
-    <a href="/contact" class="btn-secondary hidden h-[35px] md:inline-flex">Start a Project</a>
+    <div class="hidden items-center gap-5 md:flex">
+      <a href="/portal" class="text-body font-medium text-fg/60 transition-colors hover:text-fg">Sign in</a>
+      <a href="/contact" class="btn-secondary h-[35px]">Start a Project</a>
+    </div>
 
     <details class="group md:hidden">
       <summary
@@ -63,6 +66,7 @@ const currentPath = Astro.url.pathname.replace(/\/$/, '') || '/';
             {link.label}
           </a>
         ))}
+        <a href="/portal" class="block rounded-2xl px-4 py-3 text-body font-medium text-fg/70">Sign in</a>
       </div>
     </details>
   </nav>

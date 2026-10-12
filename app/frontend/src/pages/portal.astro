@@ -1,0 +1,94 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+const API_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cloudmindra.com';
+---
+
+<Layout title="Client Portal" description="Sign in to the CloudMindra client portal">
+  <section class="px-6 pb-24 pt-36" data-api={API_URL} id="portal">
+    <div class="mx-auto max-w-[420px]">
+      <!-- Loading -->
+      <p id="view-loading" class="text-center text-body text-fg/60">Loading…</p>
+
+      <!-- Signed out -->
+      <div id="view-login" class="card hidden space-y-5 p-8">
+        <div>
+          <p class="eyebrow mb-3">Client Portal</p>
+          <h1 class="font-display text-[28px] font-light leading-tight">Sign in to CloudMindra</h1>
+        </div>
+        <p id="login-error" class="hidden rounded-xl bg-red-50 px-4 py-3 text-caption text-red-700" role="alert"></p>
+        <a
+          href={`${API_URL}/api/auth/login?provider=google`}
+          class="flex h-[44px] w-full items-center justify-center gap-3 rounded-full bg-fg text-body font-medium text-canvas transition-opacity hover:opacity-90"
+        >
+          <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+            <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"></path>
+            <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"></path>
+            <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"></path>
+            <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"></path>
+          </svg>
+          Continue with Google
+        </a>
+        <a href={`${API_URL}/api/auth/login`} class="btn-secondary h-[44px] w-full">Sign in with email</a>
+      </div>
+
+      <!-- Signed in -->
+      <div id="view-account" class="card hidden space-y-6 p-8">
+        <div>
+          <p class="eyebrow mb-3">Client Portal</p>
+          <h1 class="font-display text-[28px] font-light leading-tight">Welcome, <span id="user-name"></span></h1>
+        </div>
+        <dl class="space-y-3 text-body">
+          <div class="flex justify-between gap-4"><dt class="text-fg/60">Email</dt><dd id="user-email" class="truncate"></dd></div>
+          <div class="flex justify-between gap-4"><dt class="text-fg/60">Signed in with</dt><dd id="user-provider"></dd></div>
+          <div class="flex justify-between gap-4"><dt class="text-fg/60">Groups</dt><dd id="user-groups"></dd></div>
+        </dl>
+        <a href={`${API_URL}/api/auth/logout`} class="btn-secondary h-[40px] w-full">Sign out</a>
+      </div>
+    </div>
+  </section>
+</Layout>
+
+<script>
+  const root = document.getElementById('portal')!;
+  const API = root.dataset.api as string;
+
+  const ERRORS: Record<string, string> = {
+    cancelled: 'Sign-in was cancelled.',
+    expired: 'Your sign-in session expired. Please try again.',
+    failed: 'Sign-in failed. Please try again.',
+  };
+
+  function show(view: 'loading' | 'login' | 'account') {
+    for (const v of ['loading', 'login', 'account']) {
+      document.getElementById(`view-${v}`)!.classList.toggle('hidden', v !== view);
+    }
+  }
+
+  const setText = (id: string, value: string) => (document.getElementById(id)!.textContent = value);
+
+  async function init() {
+    const error = new URLSearchParams(location.search).get('error');
+    if (error) {
+      const el = document.getElementById('login-error')!;
+      el.textContent = ERRORS[error] ?? ERRORS.failed;
+      el.classList.remove('hidden');
+      history.replaceState(null, '', location.pathname);
+    }
+
+    try {
+      const res = await fetch(`${API}/api/auth/me`, { credentials: 'include' });
+      if (!res.ok) return show('login');
+      const user = await res.json();
+      setText('user-name', user.name || user.email);
+      setText('user-email', user.email);
+      setText('user-provider', user.provider);
+      setText('user-groups', user.groups.length ? user.groups.join(', ') : '–');
+      show('account');
+    } catch {
+      show('login');
+    }
+  }
+
+  init();
+</script>

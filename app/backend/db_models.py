@@ -29,6 +29,17 @@ class BlogPost(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True)  # Cognito "sub"
+    email = Column(String, nullable=False, index=True)
+    name = Column(String, nullable=True)
+    provider = Column(String(50), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_login_at = Column(DateTime(timezone=True), nullable=True)
+
+
 class Service(Base):
     __tablename__ = "services"
 
