@@ -169,10 +169,17 @@ def user_from_claims(claims: dict) -> dict:
     return {
         "sub": claims["sub"],
         "email": claims.get("email", ""),
+        # Google's mapped claim arrives as the string "true"
+        "email_verified": str(claims.get("email_verified", "")).lower() == "true",
         "name": claims.get("name") or claims.get("email", ""),
         "provider": provider,
         "groups": claims.get("cognito:groups", []),
     }
+
+
+def seed_admin_emails() -> set[str]:
+    """Emails from ADMIN_EMAIL (comma-separated) that are always granted admin."""
+    return {e.strip().lower() for e in os.getenv("ADMIN_EMAIL", "").split(",") if e.strip()}
 
 
 # --- Dependencies ---------------------------------------------------------

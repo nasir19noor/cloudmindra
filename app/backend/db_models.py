@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, DateTime, Integer, Boolean, Text, Float
-from sqlalchemy.sql import func
+from sqlalchemy.sql import false, func
 from database import Base
 
 
@@ -36,6 +36,7 @@ class User(Base):
     email = Column(String, nullable=False, index=True)
     name = Column(String, nullable=True)
     provider = Column(String(50), nullable=True)
+    is_admin = Column(Boolean, nullable=False, default=False, server_default=false())
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     last_login_at = Column(DateTime(timezone=True), nullable=True)
 

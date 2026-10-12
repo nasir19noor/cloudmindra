@@ -1,71 +1,72 @@
-import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from auth import (
-    COOKIE_NAME,
-    SESSION_TTL,
-    admin_configured,
-    client_ip,
-    cookie_secure,
-    create_session_token,
-    require_admin,
-    verify_credentials,
-)
+from auth import require_admin
+from cognito_auth import SESSION_COOKIE, current_user
 from database import get_db
 import db_models
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
-# Simple in-memory brute-force guard: max 5 failed logins per IP per 15 minutes
-_FAILED: dict[str, list[float]] = defaultdict(list)
-_MAX_FAILS = 5
-_WINDOW = 15 * 60
-
-
-class LoginRequest(BaseModel):
-    username: str = Field(..., min_length=1, max_length=100)
-    password: str = Field(..., min_length=1, max_length=200)
-
-
-@router.post("/login")
-async def login(payload: LoginRequest, request: Request, response: Response):
-    if not admin_configured():
-        raise HTTPException(status_code=503, detail="Admin is not configured")
-
-    ip = client_ip(request)
-    now = time.time()
-    _FAILED[ip] = [t for t in _FAILED[ip] if now - t < _WINDOW]
-    if len(_FAILED[ip]) >= _MAX_FAILS:
-        raise HTTPException(status_code=429, detail="Too many attempts. Try again later.")
-
-    if not verify_credentials(payload.username, payload.password):
-        _FAILED[ip].append(now)
-        raise HTTPException(status_code=401, detail="Invalid username or password")
-
-    _FAILED.pop(ip, None)
-    response.set_cookie(
-        COOKIE_NAME,
-        create_session_token(payload.username),
-        max_age=SESSION_TTL,
-        httponly=True,
-        secure=cookie_secure(),
-        samesite="lax",
-        path="/",
-    )
-    return {"username": payload.username}
-
 
 @router.post("/logout")
 async def logout(response: Response):
-    response.delete_cookie(COOKIE_NAME, path="/")
+    response.delete_cookie(SESSION_COOKIE, path="/")
     return {"ok": True}
+
+
+class AdminUpdate(BaseModel):
+    is_admin: bool
+
+
+def _user_out(u: db_models.User, me_sub: str | None) -> dict:
+    return {
+        "id": u.id,
+        "email": u.email,
+        "name": u.name,
+        "provider": u.provider,
+        "is_admin": u.is_admin,
+        "is_self": u.id == me_sub,
+        "created_at": u.created_at.isoformat() if u.created_at else None,
+        "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
+    }
+
+
+@router.get("/users")
+async def list_users(request: Request, db: Session = Depends(get_db), _: str = Depends(require_admin)):
+    me = current_user(request)
+    rows = (
+        db.query(db_models.User)
+        .order_by(db_models.User.is_admin.desc(), db_models.User.last_login_at.desc().nullslast())
+        .all()
+    )
+    return [_user_out(u, me and me["sub"]) for u in rows]
+
+
+@router.put("/users/{user_id}")
+async def update_user(
+    user_id: str,
+    payload: AdminUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    row = db.get(db_models.User, user_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    me = current_user(request)
+    # Removing your own admin access would lock you out mid-session
+    if me and me["sub"] == user_id and not payload.is_admin:
+        raise HTTPException(status_code=400, detail="You cannot remove your own admin access")
+    row.is_admin = payload.is_admin
+    db.commit()
+    return _user_out(row, me and me["sub"])
 
 
 @router.get("/me")
