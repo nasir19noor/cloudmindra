@@ -18,7 +18,18 @@ aws:
   acm:
     domain_name_nasir: "" 
   cloudfront:
-    domain_name_nasir: ""  
+    domain_name_nasir: ""
+  cognito:
+    user_pool_name: "cloudmindra"
+    domain_prefix: "cloudmindra-auth"
+    ses_identity: "cloudmindra.com"
+    ses_from_address: "no-reply@cloudmindra.com"
+    callback_urls:
+      - "https://api.cloudmindra.com/api/auth/callback"
+      - "http://localhost:11001/api/auth/callback"
+    logout_urls:
+      - "https://cloudmindra.com/"
+      - "http://localhost:11000/"
 cloudflare:
   zone_name: "cloudmindra.com"
   root: "@"

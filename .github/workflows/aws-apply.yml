@@ -1,0 +1,128 @@
+name: 'AWS Apply'
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'aws/services/**.tf'
+      - 'aws/services/**.tfvars'
+      - 'config.yaml'
+      - '.github/workflows/aws-apply.yml'
+  workflow_dispatch:
+
+env:
+  TF_VERSION: '1.11.4'
+  AWS_REGION: 'ap-southeast-1'
+
+permissions:
+  id-token: write
+  contents: read
+
+# Never run two applies against the same state at once
+concurrency:
+  group: aws-apply
+  cancel-in-progress: false
+
+jobs:
+  detect-changed-dirs:
+    name: Detect Changed Directories
+    runs-on: ubuntu-latest
+    outputs:
+      dirs: ${{ steps.find-dirs.outputs.dirs }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find Changed Terraform Directories
+        id: find-dirs
+        run: |
+          ALL_FILES=$(find aws/services -type f \( -name "*.tf" -o -name "*.tfvars" \) -not -path "*/.terraform/*" | sort)
+
+          if [ "${{ github.event_name }}" == "push" ]; then
+            BEFORE_SHA="${{ github.event.before }}"
+            AFTER_SHA="${{ github.event.after }}"
+
+            if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+              echo "Before SHA is empty or zero. Using all terraform files."
+              CHANGED_FILES="$ALL_FILES"
+            elif git diff --name-only "$BEFORE_SHA" "$AFTER_SHA" | grep -qE '^(config\.yaml|\.github/workflows/aws-apply\.yml)$'; then
+              # Every service reads config.yaml, so a change there may affect all of them
+              echo "Shared config changed. Using all terraform files."
+              CHANGED_FILES="$ALL_FILES"
+            else
+              echo "Comparing $BEFORE_SHA with $AFTER_SHA"
+              CHANGED_FILES=$(git diff --name-only --diff-filter=d "$BEFORE_SHA" "$AFTER_SHA" | grep -E '^aws/services/.*\.(tf|tfvars)$' || echo "")
+            fi
+          else
+            echo "Manual run. Using all terraform files."
+            CHANGED_FILES="$ALL_FILES"
+          fi
+
+          if [ -n "$CHANGED_FILES" ]; then
+            echo "Found changed files:"
+            echo "$CHANGED_FILES"
+            DIRS=$(echo "$CHANGED_FILES" | xargs -I{} dirname {} | sort -u | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          else
+            echo "No changed terraform files detected"
+            DIRS="[]"
+          fi
+
+          echo "dirs=$DIRS" >> $GITHUB_OUTPUT
+          echo "Changed directories: $DIRS"
+
+  terraform-apply:
+    name: Terraform Apply
+    needs: detect-changed-dirs
+    if: ${{ needs.detect-changed-dirs.outputs.dirs != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        directory: ${{ fromJSON(needs.detect-changed-dirs.outputs.dirs) }}
+      fail-fast: false
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify AWS Identity
+        run: aws sts get-caller-identity
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Configure backend.conf
+        working-directory: ${{ matrix.directory }}
+        run: |
+          state_bucket=$(yq -r '.aws.global.state_bucket' "$GITHUB_WORKSPACE/config.yaml")
+          region=$(yq -r '.aws.global.region' "$GITHUB_WORKSPACE/config.yaml")
+          printf 'bucket = "%s"\nregion = "%s"\n' "$state_bucket" "$region" > backend.conf
+          cat backend.conf
+
+      - name: Terraform Init
+        working-directory: ${{ matrix.directory }}
+        run: terraform init -input=false -backend-config=backend.conf
+
+      - name: Terraform Validate
+        working-directory: ${{ matrix.directory }}
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: ${{ matrix.directory }}
+        run: terraform plan -input=false -no-color -out=tfplan
+
+      - name: Terraform Apply
+        working-directory: ${{ matrix.directory }}
+        run: terraform apply -input=false -auto-approve tfplan
