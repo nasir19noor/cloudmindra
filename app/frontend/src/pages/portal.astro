@@ -41,8 +41,8 @@ const API_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cloudmindra.com';
         <dl class="space-y-3 text-body">
           <div class="flex justify-between gap-4"><dt class="text-fg/60">Email</dt><dd id="user-email" class="truncate"></dd></div>
           <div class="flex justify-between gap-4"><dt class="text-fg/60">Signed in with</dt><dd id="user-provider"></dd></div>
-          <div class="flex justify-between gap-4"><dt class="text-fg/60">Groups</dt><dd id="user-groups"></dd></div>
         </dl>
+        <a id="admin-link" href="/admin" class="hidden h-[40px] w-full items-center justify-center rounded-full bg-fg text-body font-medium text-canvas transition-opacity hover:opacity-90">Admin dashboard</a>
         <a href={`${API_URL}/api/auth/logout`} class="btn-secondary h-[40px] w-full">Sign out</a>
       </div>
     </div>
@@ -83,8 +83,9 @@ const API_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cloudmindra.com';
       setText('user-name', user.name || user.email);
       setText('user-email', user.email);
       setText('user-provider', user.provider);
-      setText('user-groups', user.groups.length ? user.groups.join(', ') : '–');
-      show('account');
+      const adminLink = document.getElementById('admin-link')!;
+      adminLink.classList.toggle('hidden', !user.is_admin);
+      adminLink.classList.toggle('flex', user.is_admin);      show('account');
     } catch {
       show('login');
     }

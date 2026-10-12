@@ -43,7 +43,7 @@ const panels = [
 
     <!-- Login -->
     <div id="view-login" class="hidden min-h-screen items-center justify-center px-6">
-      <form id="login-form" class="card w-full max-w-[380px] space-y-5 p-8">
+      <div class="card w-full max-w-[380px] space-y-5 p-8">
         <div class="flex items-center gap-2.5 font-display text-[19px]">
           <svg width="22" height="22" viewBox="0 0 32 32" fill="none" aria-hidden="true">
             <circle cx="16" cy="16" r="10" stroke="#ff6b35" stroke-width="2.5"></circle>
@@ -51,19 +51,21 @@ const panels = [
           </svg>
           CloudMindra Admin
         </div>
-        <div>
-          <label for="username" class="mb-2 block text-caption font-medium text-fg/70">Username</label>
-          <input id="username" name="username" autocomplete="username" required class="field" />
-        </div>
-        <div>
-          <label for="password" class="mb-2 block text-caption font-medium text-fg/70">Password</label>
-          <input id="password" name="password" type="password" autocomplete="current-password" required class="field" />
-        </div>
-        <button type="submit" class="h-[44px] w-full rounded-full bg-fg text-body font-medium text-canvas transition-opacity hover:opacity-90 disabled:opacity-60">
-          Sign in
-        </button>
+        <a
+          href={`${API_URL}/api/auth/login?provider=google&next=/admin`}
+          class="flex h-[44px] w-full items-center justify-center gap-3 rounded-full bg-fg text-body font-medium text-canvas transition-opacity hover:opacity-90"
+        >
+          <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+            <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"></path>
+            <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"></path>
+            <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"></path>
+            <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"></path>
+          </svg>
+          Continue with Google
+        </a>
+        <a href={`${API_URL}/api/auth/login?next=/admin`} class="btn-secondary h-[44px] w-full">Sign in with email</a>
         <p id="login-error" class="hidden text-center text-caption text-red-600" role="alert"></p>
-      </form>
+      </div>
     </div>
 
     <!-- Dashboard -->
@@ -139,6 +141,29 @@ const panels = [
             </section>
           ))}
         </div>
+
+        <!-- Users and admin access -->
+        <section class="card mt-4 overflow-hidden">
+          <div class="flex items-center justify-between gap-4 p-6 pb-4">
+            <p class="eyebrow">Users <span id="users-count" class="text-fg/45"></span></p>
+            <p class="text-caption text-fg/55">Admins can open this dashboard</p>
+          </div>
+          <p id="users-error" class="hidden px-6 pb-4 text-caption text-red-600" role="alert"></p>
+          <div class="overflow-x-auto">
+            <table class="w-full min-w-[720px] text-left text-[13px]">
+              <thead class="border-y border-fg/[0.08] text-[11px] uppercase tracking-[0.1em] text-fg/55">
+                <tr>
+                  <th class="px-6 py-3 font-medium">User</th>
+                  <th class="px-3 py-3 font-medium">Signed in with</th>
+                  <th class="px-3 py-3 font-medium">Joined</th>
+                  <th class="px-3 py-3 font-medium">Last login</th>
+                  <th class="px-6 py-3 text-right font-medium">Admin</th>
+                </tr>
+              </thead>
+              <tbody id="users" class="divide-y divide-fg/[0.06]"></tbody>
+            </table>
+          </div>
+        </section>
 
         <!-- Contact submissions -->
         <section class="card mt-4 overflow-hidden">
@@ -318,6 +343,67 @@ const panels = [
       .join('');
   }
 
+  async function loadUsers() {
+    const tbody = $('#users');
+    const res = await api('/api/admin/users');
+    if (!res.ok) {
+      tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-6 text-fg/50">Could not load users</td></tr>';
+      return;
+    }
+    const rows = await res.json();
+    $('#users-count').textContent = `· ${fmtNum(rows.length)}`;
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-6 text-fg/50">No one has signed in yet</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows
+      .map(
+        (u: any) => `
+        <tr class="text-fg/80">
+          <td class="px-6 py-3">
+            <span class="font-medium text-fg">${esc(u.name || u.email)}</span>${u.is_self ? ' <span class="text-fg/50">(you)</span>' : ''}
+            <span class="block text-fg/55">${esc(u.email)}</span>
+          </td>
+          <td class="px-3 py-3">${esc(u.provider)}</td>
+          <td class="whitespace-nowrap px-3 py-3 text-fg/60">${esc(fmtTime(u.created_at))}</td>
+          <td class="whitespace-nowrap px-3 py-3 text-fg/60">${esc(fmtTime(u.last_login_at))}</td>
+          <td class="px-6 py-3 text-right">
+            <button
+              data-user="${esc(u.id)}"
+              data-admin="${u.is_admin}"
+              role="switch"
+              aria-checked="${u.is_admin}"
+              aria-label="Admin access for ${esc(u.email)}"
+              ${u.is_self && u.is_admin ? 'disabled title="You cannot remove your own admin access"' : ''}
+              class="admin-toggle relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${u.is_admin ? 'bg-brand' : 'bg-fg/15'}"
+            >
+              <span class="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${u.is_admin ? 'translate-x-[22px]' : 'translate-x-[2px]'}"></span>
+            </button>
+          </td>
+        </tr>`,
+      )
+      .join('');
+  }
+
+  $('#users').addEventListener('click', async (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.admin-toggle');
+    if (!btn || btn.disabled) return;
+    const makeAdmin = btn.dataset.admin !== 'true';
+    const err = $('#users-error');
+    err.classList.add('hidden');
+    btn.disabled = true;
+    const res = await api(`/api/admin/users/${encodeURIComponent(btn.dataset.user!)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ is_admin: makeAdmin }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      const body = res ? await res.json().catch(() => ({})) : {};
+      err.textContent = body.detail || 'Could not update admin access';
+      err.classList.remove('hidden');
+    }
+    await loadUsers();
+  });
+
   async function loadAnalytics() {
     document.querySelectorAll<HTMLButtonElement>('.range-btn').forEach((b) => {
       const active = Number(b.dataset.days) === days;
@@ -345,40 +431,8 @@ const panels = [
   async function enterDashboard(username: string) {
     $('#admin-user').textContent = username;
     show('dashboard');
-    await Promise.all([loadAnalytics(), loadContacts()]);
+    await Promise.all([loadAnalytics(), loadContacts(), loadUsers()]);
   }
-
-  $('#login-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const form = e.currentTarget as HTMLFormElement;
-    const btn = form.querySelector('button')!;
-    const err = $('#login-error');
-    btn.disabled = true;
-    err.classList.add('hidden');
-    try {
-      const res = await api('/api/admin/login', {
-        method: 'POST',
-        body: JSON.stringify({
-          username: (form.elements.namedItem('username') as HTMLInputElement).value,
-          password: (form.elements.namedItem('password') as HTMLInputElement).value,
-        }),
-      });
-      if (res.ok) {
-        const { username } = await res.json();
-        form.reset();
-        await enterDashboard(username);
-      } else {
-        const body = await res.json().catch(() => ({}));
-        err.textContent = body.detail || 'Sign in failed';
-        err.classList.remove('hidden');
-      }
-    } catch {
-      err.textContent = 'Could not reach the server';
-      err.classList.remove('hidden');
-    } finally {
-      btn.disabled = false;
-    }
-  });
 
   $('#logout').addEventListener('click', async () => {
     await api('/api/admin/logout', { method: 'POST' }).catch(() => {});
@@ -397,15 +451,32 @@ const panels = [
     loadAnalytics();
   });
 
+  function loginError(message: string) {
+    const err = $('#login-error');
+    err.textContent = message;
+    err.classList.remove('hidden');
+  }
+
   (async () => {
+    const error = new URLSearchParams(location.search).get('error');
+    if (error) {
+      loginError(error === 'cancelled' ? 'Sign-in was cancelled.' : 'Sign-in failed. Please try again.');
+      history.replaceState(null, '', location.pathname);
+    }
     try {
       const res = await api('/api/admin/me');
       if (res.ok) {
         const { username } = await res.json();
         await enterDashboard(username);
-      } else {
-        show('login');
+        return;
       }
+      // Signed in through Cognito but not an admin
+      const user = await api('/api/auth/me');
+      if (user.ok) {
+        const { email } = await user.json();
+        loginError(`${email} does not have admin access.`);
+      }
+      show('login');
     } catch {
       show('login');
     }
