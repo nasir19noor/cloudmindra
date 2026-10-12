@@ -14,3 +14,5 @@ ENV HOST=0.0.0.0
 ENV PORT=11000
 EXPOSE 11000
 CMD ["node", "./dist/server/entry.mjs"]
+
+

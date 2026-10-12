@@ -7,6 +7,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import time
@@ -17,6 +18,8 @@ from urllib.parse import urlencode
 
 import jwt
 from fastapi import HTTPException, Request
+
+logger = logging.getLogger(__name__)
 
 SESSION_COOKIE = "cm_session"
 STATE_COOKIE = "cm_oauth"
@@ -153,6 +156,7 @@ def verify_id_token(id_token: str) -> dict:
             issuer=os.environ["COGNITO_ISSUER"].rstrip("/"),
         )
     except jwt.PyJWTError as exc:
+        logger.warning("ID token rejected: %s: %s", type(exc).__name__, exc)
         raise HTTPException(status_code=401, detail="Invalid ID token") from exc
     if claims.get("token_use") != "id":
         raise HTTPException(status_code=401, detail="Invalid ID token")
