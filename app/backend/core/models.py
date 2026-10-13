@@ -81,6 +81,16 @@ class OrgApp(CoreBase):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class NotificationPref(CoreBase):
+    """A member's choice for one email alert in one workspace. No row means on (DESIGN.md §4.1)."""
+    __tablename__ = "notification_prefs"
+
+    membership_id = Column(Integer, ForeignKey("core.memberships.id", ondelete="CASCADE"), primary_key=True)
+    event_key = Column(String(60), primary_key=True)
+    email = Column(Boolean, nullable=False, default=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class UsageCounter(CoreBase):
     """Monthly usage for "*.per_month" limits (DESIGN.md §5)."""
     __tablename__ = "usage_counters"

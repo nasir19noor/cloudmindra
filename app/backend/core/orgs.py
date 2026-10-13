@@ -89,13 +89,18 @@ def delete_workspace(db: Session, org_id: str) -> None:
     emit(db, db_models.CoreOutbox, "org.deleted", org_id)
 
 
-def alert_recipients(db: Session, org_id: str) -> list[str]:
-    """Emails of everyone in the workspace. Alerts default on for every role (DESIGN.md §4.1);
-    per-event preferences arrive in phase 4."""
-    rows = (
+def alert_recipients(db: Session, org_id: str, event_key: str | None = None) -> list[str]:
+    """Emails of the workspace's members who want this alert. Alerts are on for every role
+    unless the member switched that event off (DESIGN.md §4.1)."""
+    q = (
         db.query(db_models.User.email)
         .join(db_models.Membership, db_models.Membership.user_id == db_models.User.id)
         .filter(db_models.Membership.org_id == org_id)
-        .all()
     )
-    return sorted({email for (email,) in rows if email})
+    if event_key:
+        opted_out = (
+            db.query(db_models.NotificationPref.membership_id)
+            .filter(db_models.NotificationPref.event_key == event_key, db_models.NotificationPref.email.is_(False))
+        )
+        q = q.filter(db_models.Membership.id.notin_(opted_out))
+    return sorted({email for (email,) in q.all() if email})

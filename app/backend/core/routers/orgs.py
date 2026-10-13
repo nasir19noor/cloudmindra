@@ -8,6 +8,7 @@ from core.auth import require_user
 from core.database import get_db
 from core.entitlements import free_workspace_limit, modules_overview, owned_free_workspace_count
 from core.audit import audit, audit_ctx, event_out
+from core.catalog import APPS, NOTIFICATION_EVENTS
 from core.auth import client_ip
 from core.jobs import job_out
 from core.orgs import OrgContext, create_workspace, delete_workspace, org_access
@@ -148,3 +149,44 @@ def job_status(job_id: str, ctx: OrgContext = Depends(org_access("org.read")), d
     if job is None or job.org_id != ctx.org_id:
         raise HTTPException(status_code=404, detail="Job not found")
     return job_out(job)
+
+
+class AlertSettings(BaseModel):
+    # {"uptime.down": false, ...}; events left out keep their current setting
+    events: dict[str, bool]
+
+
+def _my_membership(db: Session, ctx: OrgContext) -> "db_models.Membership":
+    return (db.query(db_models.Membership)
+            .filter(db_models.Membership.org_id == ctx.org_id, db_models.Membership.user_id == ctx.user_id).one())
+
+
+def _alerts_out(db: Session, membership_id: int) -> list[dict]:
+    prefs = {p.event_key: p.email for p in db.query(db_models.NotificationPref)
+             .filter(db_models.NotificationPref.membership_id == membership_id)}
+    return [{"event_key": key, "app": ev["app"], "app_name": APPS[ev["app"]]["name"], "label": ev["label"],
+             "email": prefs.get(key, True)} for key, ev in NOTIFICATION_EVENTS.items() if APPS[ev["app"]]["available"]]
+
+
+@router.get("/{org_id}/notifications")
+def my_alert_settings(ctx: OrgContext = Depends(org_access("org.read")), db: Session = Depends(get_db)):
+    """The caller's own email alert choices for this workspace (any role)."""
+    return _alerts_out(db, _my_membership(db, ctx).id)
+
+
+@router.put("/{org_id}/notifications")
+def update_my_alert_settings(payload: AlertSettings, ctx: OrgContext = Depends(org_access("org.read")),
+                             db: Session = Depends(get_db)):
+    unknown = sorted(set(payload.events) - set(NOTIFICATION_EVENTS))
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"Unknown alerts: {', '.join(unknown)}")
+    membership = _my_membership(db, ctx)
+    for key, on in payload.events.items():
+        row = db.get(db_models.NotificationPref, (membership.id, key))
+        if row is None:
+            db.add(db_models.NotificationPref(membership_id=membership.id, event_key=key, email=on))
+        else:
+            row.email = on
+    audit_ctx(db, ctx, "notifications.updated", target_id=ctx.user_id, metadata=payload.events)
+    db.commit()
+    return _alerts_out(db, membership.id)
