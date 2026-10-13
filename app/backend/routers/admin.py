@@ -1,5 +1,6 @@
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -10,7 +11,8 @@ from sqlalchemy.orm import Session
 from auth import require_admin
 from cognito_auth import SESSION_COOKIE, current_user
 from database import get_db
-from orgs import member_limit
+from catalog import APPS, LIMITS, WORKSPACE_SEATS
+from entitlements import row_is_pro, seat_limit
 import db_models
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -71,11 +73,31 @@ async def update_user(
 
 
 class SeatLimitUpdate(BaseModel):
-    # None removes the override and falls back to the default (MEMBER_LIMIT)
+    # None removes the override and falls back to the tier default (3 Free / 10 with any Pro)
     member_limit: int | None = Field(None, ge=1, le=1000)
 
 
-def _workspace_out(org: db_models.Organization, owners: list[str], members: int, pending: int) -> dict:
+class ModuleTierUpdate(BaseModel):
+    tier: Literal["free", "pro"]
+    pro_until: datetime | None = None  # None = no end date
+    # Per-workspace limit overrides for this module, e.g. {"uptime.monitors": 200}; {} clears them
+    limits: dict[str, int] | None = None
+
+
+def _module_tiers(db: Session) -> dict[str, dict[str, dict]]:
+    out: dict[str, dict[str, dict]] = defaultdict(dict)
+    for r in db.query(db_models.OrgApp):
+        out[r.org_id][r.app_key] = {
+            "tier": "pro" if row_is_pro(r) else "free",
+            "pro_until": r.pro_until.isoformat() if r.pro_until else None,
+            "overrides": r.limits or {},
+        }
+    return out
+
+
+def _workspace_out(db: Session, org: db_models.Organization, owners: list[str], members: int, pending: int,
+                   tiers: dict[str, dict] | None = None) -> dict:
+    tiers = tiers or {}
     return {
         "id": org.id,
         "name": org.name,
@@ -83,8 +105,10 @@ def _workspace_out(org: db_models.Organization, owners: list[str], members: int,
         "members": members,
         "pending_invites": pending,
         "member_limit": org.member_limit,
-        "effective_limit": member_limit(org),
-        "default_limit": member_limit(db_models.Organization()),
+        "effective_limit": seat_limit(db, org),
+        "default_limit": WORKSPACE_SEATS["pro" if any(t["tier"] == "pro" for t in tiers.values()) else "free"],
+        "modules": {key: {"name": app["name"], **tiers.get(key, {"tier": "free", "pro_until": None, "overrides": {}})}
+                    for key, app in APPS.items() if app["available"]},
         "created_at": org.created_at.isoformat() if org.created_at else None,
     }
 
@@ -113,8 +137,10 @@ def _seat_counts(db: Session):
 @router.get("/orgs")
 async def list_workspaces(db: Session = Depends(get_db), _: str = Depends(require_admin)):
     members, pending, owners = _seat_counts(db)
+    tiers = _module_tiers(db)
     orgs = db.query(db_models.Organization).order_by(db_models.Organization.created_at.desc()).all()
-    return [_workspace_out(o, sorted(owners[o.id]), members.get(o.id, 0), pending.get(o.id, 0)) for o in orgs]
+    return [_workspace_out(db, o, sorted(owners[o.id]), members.get(o.id, 0), pending.get(o.id, 0), tiers[o.id])
+            for o in orgs]
 
 
 @router.put("/orgs/{org_id}")
@@ -126,7 +152,41 @@ async def update_workspace_seats(org_id: str, payload: SeatLimitUpdate, db: Sess
     org.member_limit = payload.member_limit
     db.commit()
     members, pending, owners = _seat_counts(db)
-    return _workspace_out(org, sorted(owners[org.id]), members.get(org.id, 0), pending.get(org.id, 0))
+    return _workspace_out(db, org, sorted(owners[org.id]), members.get(org.id, 0), pending.get(org.id, 0),
+                          _module_tiers(db)[org.id])
+
+
+@router.put("/orgs/{org_id}/modules/{app_key}")
+async def set_module_tier(org_id: str, app_key: str, payload: ModuleTierUpdate, admin_email: str = Depends(require_admin),
+                          db: Session = Depends(get_db)):
+    """Switch a module between Free and Pro for one workspace (Pro is set by hand until billing exists)."""
+    org = db.get(db_models.Organization, org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    if app_key not in APPS:
+        raise HTTPException(status_code=404, detail="Unknown module")
+    known = LIMITS[app_key]["free"].keys()
+    if payload.limits and (bad := sorted(set(payload.limits) - set(known))):
+        raise HTTPException(status_code=422, detail=f"Unknown limits for {app_key}: {', '.join(bad)}")
+    if payload.limits and any(v < 0 for v in payload.limits.values()):
+        raise HTTPException(status_code=422, detail="Limits cannot be negative")
+
+    row = db.get(db_models.OrgApp, (org_id, app_key))
+    if row is None:
+        row = db_models.OrgApp(org_id=org_id, app_key=app_key)
+        db.add(row)
+    if payload.tier == "pro" and not row_is_pro(row):
+        row.pro_since = datetime.now(timezone.utc)
+    row.tier = payload.tier
+    row.status = "active"
+    row.pro_until = payload.pro_until if payload.tier == "pro" else None
+    if payload.limits is not None:
+        row.limits = payload.limits or None
+    row.updated_by = admin_email
+    db.commit()
+    members, pending, owners = _seat_counts(db)
+    return _workspace_out(db, org, sorted(owners[org.id]), members.get(org.id, 0), pending.get(org.id, 0),
+                          _module_tiers(db)[org.id])
 
 
 @router.get("/me")

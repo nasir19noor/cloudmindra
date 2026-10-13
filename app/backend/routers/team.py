@@ -3,7 +3,7 @@
 - Owners and admins invite by email as admin, member or viewer (never owner).
 - Only the SHA-256 of the 7-day token is stored; the raw token exists only in the email.
 - Accepting requires signing in with the exact, verified invited address.
-- Seats (members + pending invitations) are capped by member_limit().
+- Seats (members + pending invitations) are capped by entitlements.seat_limit().
 - A workspace always keeps at least one owner; only owners can grant or remove owner.
 """
 import hashlib
@@ -22,7 +22,8 @@ from catalog import has_permission
 from cognito_auth import require_user
 from database import get_db
 from mailer import send_invitation_email
-from orgs import OrgContext, ensure_workspace, member_limit, org_access
+from entitlements import seat_limit
+from orgs import OrgContext, ensure_workspace, org_access
 import db_models
 
 router = APIRouter(tags=["team"])
@@ -126,7 +127,7 @@ def invite(payload: InviteCreate, ctx: OrgContext = Depends(org_access("members.
     existing = _pending(db, ctx.org_id).filter(db_models.Invitation.email == email).first()
     if existing is None:
         seats = _member_count(db, ctx.org_id) + _pending(db, ctx.org_id).count()
-        limit = member_limit(org)
+        limit = seat_limit(db, org)
         if seats >= limit:
             raise HTTPException(status_code=402, detail=f"This workspace has {limit} seats, including pending invitations. "
                                                         "Remove someone or cancel an invitation first.")
@@ -223,7 +224,7 @@ def list_members(ctx: OrgContext = Depends(org_access("members.read")), db: Sess
     return {
         "members": [{"user_id": u.id, "email": u.email, "name": u.name, "role": m.role,
                      "is_self": u.id == ctx.user_id, "joined_at": _iso(m.created_at)} for m, u in rows],
-        "seats": {"used": len(rows) + _pending(db, ctx.org_id).count(), "limit": member_limit(org)},
+        "seats": {"used": len(rows) + _pending(db, ctx.org_id).count(), "limit": seat_limit(db, org)},
         "can_manage": has_permission(ctx.role, "members.manage"),
     }
 

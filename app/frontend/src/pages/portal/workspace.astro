@@ -45,6 +45,16 @@ const CURRENCIES = ['USD', 'IDR', 'SGD', 'MYR', 'EUR', 'GBP', 'AUD', 'JPY'];
           <p id="general-msg" class="mt-3 hidden text-caption" role="status"></p>
         </section>
 
+        <!-- Plan -->
+        <section class="card mt-4 p-6">
+          <p class="eyebrow">Plan</p>
+          <p class="mt-2 text-caption text-fg/55">
+            Every module starts on Free. Upgrade individual modules to Pro — contact
+            <a href="/contact" class="font-medium text-fg underline">CloudMindra</a> to switch one on.
+          </p>
+          <ul id="plan-list" class="mt-5 divide-y divide-fg/[0.06] rounded-2xl ring-1 ring-fg/[0.08]"></ul>
+        </section>
+
         <!-- Team -->
         <section class="card mt-4 p-6">
           <p class="eyebrow">Team <span id="team-seats" class="text-fg/45"></span></p>
@@ -303,6 +313,46 @@ const CURRENCIES = ['USD', 'IDR', 'SGD', 'MYR', 'EUR', 'GBP', 'AUD', 'JPY'];
   });
 
   // --- Start ------------------------------------------------------------------------
+  // --- Plan -----------------------------------------------------------------------
+  type Module = {
+    key: string; name: string; available: boolean; tier: 'free' | 'pro'; pro_until: string | null;
+    limits: Record<string, number>; usage: Record<string, number>; features: string[]; labels: Record<string, string>;
+  };
+
+  function limitLine(m: Module, key: string) {
+    const label = m.labels[key] ?? key;
+    if (key.endsWith('min_interval')) return `Checks every ${m.limits[key]} min or more`;
+    if (key in m.usage) return `${m.usage[key]} of ${m.limits[key]} ${label}`;
+    return `${m.limits[key]} ${label}`;
+  }
+
+  async function loadPlan() {
+    const res = await api(`${base()}/modules`).catch(() => null);
+    if (!res?.ok) return;
+    const modules: Module[] = await res.json();
+    $('plan-list').innerHTML = modules
+      .map((m) => {
+        const badge = !m.available
+          ? '<span class="rounded-full bg-fg/[0.06] px-2 py-0.5 text-[11px] text-fg/50">Coming soon</span>'
+          : m.tier === 'pro'
+            ? '<span class="rounded-full bg-brand/15 px-2 py-0.5 text-[11px] font-medium text-brand">Pro</span>'
+            : '<span class="rounded-full bg-fg/[0.06] px-2 py-0.5 text-[11px] font-medium text-fg/60">Free</span>';
+        const until = m.tier === 'pro' && m.pro_until ? ` · until ${esc(new Date(m.pro_until).toLocaleDateString())}` : '';
+        const details = m.available
+          ? Object.keys(m.limits).map((k) => esc(limitLine(m, k))).concat(m.features.map(esc)).join(' · ')
+          : 'Not available yet';
+        return `
+          <li class="flex flex-wrap items-start justify-between gap-3 px-4 py-3 ${m.available ? '' : 'opacity-60'}">
+            <div class="min-w-0">
+              <p class="text-body font-medium">${esc(m.name)}</p>
+              <p class="text-caption text-fg/55">${details}</p>
+            </div>
+            <p class="text-caption text-fg/55">${badge}${until}</p>
+          </li>`;
+      })
+      .join('');
+  }
+
   async function init() {
     const res = await api('/api/orgs').catch(() => null);
     if (!res?.ok) {
@@ -323,7 +373,7 @@ const CURRENCIES = ['USD', 'IDR', 'SGD', 'MYR', 'EUR', 'GBP', 'AUD', 'JPY'];
     }
     renderHeader();
     view('admin');
-    await loadTeam();
+    await Promise.all([loadTeam(), loadPlan()]);
   }
 
   init();

@@ -173,12 +173,13 @@ const panels = [
           </div>
           <p id="orgs-msg" class="hidden px-6 pb-4 text-caption" role="status"></p>
           <div class="overflow-x-auto">
-            <table class="w-full min-w-[760px] text-left text-[13px]">
+            <table class="w-full min-w-[960px] text-left text-[13px]">
               <thead class="border-y border-fg/[0.08] text-[11px] uppercase tracking-[0.1em] text-fg/55">
                 <tr>
                   <th class="px-6 py-3 font-medium">Workspace</th>
                   <th class="px-3 py-3 font-medium">Owner</th>
                   <th class="px-3 py-3 font-medium">Seats used</th>
+                  <th class="px-3 py-3 font-medium">Modules</th>
                   <th class="px-3 py-3 font-medium">Created</th>
                   <th class="px-6 py-3 text-right font-medium">Seat limit</th>
                 </tr>
@@ -378,13 +379,13 @@ const panels = [
     const tbody = $('#orgs');
     const res = await api('/api/admin/orgs');
     if (!res.ok) {
-      tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-6 text-fg/50">Could not load workspaces</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-6 text-fg/50">Could not load workspaces</td></tr>';
       return;
     }
     const rows = await res.json();
     $('#orgs-count').textContent = `· ${fmtNum(rows.length)}`;
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-6 text-fg/50">No workspaces yet</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-6 text-fg/50">No workspaces yet</td></tr>';
       return;
     }
     tbody.innerHTML = rows
@@ -399,6 +400,22 @@ const panels = [
             <span class="${full ? 'font-medium text-amber-700' : ''}">${fmtNum(used)} / ${fmtNum(o.effective_limit)}</span>
             <span class="block text-fg/50">${fmtNum(o.members)} members${o.pending_invites ? ` · ${fmtNum(o.pending_invites)} pending` : ''}</span>
           </td>
+          <td class="px-3 py-3">
+            ${Object.entries(o.modules)
+              .map(
+                ([key, m]: [string, any]) => `
+              <label class="flex items-center gap-2 py-0.5">
+                <span class="w-[110px] truncate">${esc(m.name)}</span>
+                <select data-org="${esc(o.id)}" data-app="${esc(key)}" class="tier-select field h-[30px] w-[86px] py-0 text-[12px] ${
+                  m.tier === 'pro' ? 'font-medium text-brand' : ''
+                }" aria-label="${esc(m.name)} tier for ${esc(o.name)}">
+                  <option value="free" ${m.tier === 'free' ? 'selected' : ''}>Free</option>
+                  <option value="pro" ${m.tier === 'pro' ? 'selected' : ''}>Pro</option>
+                </select>
+              </label>`,
+              )
+              .join('')}
+          </td>
           <td class="whitespace-nowrap px-3 py-3 text-fg/60">${esc(fmtTime(o.created_at))}</td>
           <td class="px-6 py-3">
             <form class="seat-form flex items-center justify-end gap-2" data-org="${esc(o.id)}">
@@ -412,6 +429,32 @@ const panels = [
       })
       .join('');
   }
+
+  // Switch a module between Free and Pro for one workspace (manual until billing exists)
+  $('#orgs').addEventListener('change', async (e) => {
+    const select = (e.target as HTMLElement).closest<HTMLSelectElement>('.tier-select');
+    if (!select) return;
+    const tier = select.value;
+    const label = select.getAttribute('aria-label');
+    if (!confirm(`Set ${label} to ${tier === 'pro' ? 'Pro' : 'Free'}?`)) {
+      select.value = tier === 'pro' ? 'free' : 'pro';
+      return;
+    }
+    select.disabled = true;
+    orgsMsg(null);
+    const res = await api(`/api/admin/orgs/${encodeURIComponent(select.dataset.org!)}/modules/${encodeURIComponent(select.dataset.app!)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ tier }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      const body = res ? await res.json().catch(() => ({})) : {};
+      orgsMsg(typeof body.detail === 'string' ? body.detail : 'Could not change the tier');
+    } else {
+      const o = await res.json();
+      orgsMsg(`${o.name}: ${label?.split(' tier')[0]} is now ${tier === 'pro' ? 'Pro' : 'Free'}. Seats: ${o.effective_limit}.`, true);
+    }
+    await loadWorkspaces();
+  });
 
   $('#orgs').addEventListener('submit', async (e) => {
     e.preventDefault();

@@ -6,14 +6,8 @@ from sqlalchemy.orm import Session
 
 from cognito_auth import require_user
 from database import get_db
-from orgs import (
-    OrgContext,
-    create_workspace,
-    delete_workspace,
-    org_access,
-    owned_workspace_count,
-    owned_workspace_limit,
-)
+from entitlements import free_workspace_limit, modules_overview, owned_free_workspace_count
+from orgs import OrgContext, create_workspace, delete_workspace, org_access
 import db_models
 
 router = APIRouter(prefix="/api/orgs", tags=["workspaces"])
@@ -61,16 +55,18 @@ def list_workspaces(user: dict = Depends(require_user), db: Session = Depends(ge
     return {
         "workspaces": [_workspace_out(org, role) for org, role in rows],
         "last_org_id": me.last_org_id,
-        "owned_limit": owned_workspace_limit(),
+        "free_workspace_limit": free_workspace_limit(),
     }
 
 
 @router.post("", status_code=201)
 def create(payload: WorkspaceCreate, user: dict = Depends(require_user), db: Session = Depends(get_db)):
     me = _current_user(db, user)
-    limit = owned_workspace_limit()
-    if owned_workspace_count(db, me.id) >= limit:
-        raise HTTPException(status_code=403, detail=f"You can own up to {limit} workspaces")
+    # Only workspaces with no Pro module count (DESIGN.md §4.1)
+    limit = free_workspace_limit()
+    if owned_free_workspace_count(db, me.id) >= limit:
+        raise HTTPException(status_code=403, detail=f"You can own up to {limit} workspaces without a Pro module. "
+                                                    "Upgrade one of them, or contact CloudMindra.")
     org = create_workspace(db, me.id, payload.name)
     me.last_org_id = org.id
     db.commit()
@@ -81,7 +77,13 @@ def create(payload: WorkspaceCreate, user: dict = Depends(require_user), db: Ses
 def get_workspace(ctx: OrgContext = Depends(org_access("org.read")), db: Session = Depends(get_db)):
     org = db.get(db_models.Organization, ctx.org_id)
     members = db.query(db_models.Membership).filter(db_models.Membership.org_id == ctx.org_id).count()
-    return _workspace_out(org, ctx.role, member_count=members)
+    return {**_workspace_out(org, ctx.role, member_count=members), "modules": modules_overview(db, ctx.org_id)}
+
+
+@router.get("/{org_id}/modules")
+def workspace_modules(ctx: OrgContext = Depends(org_access("org.read")), db: Session = Depends(get_db)):
+    """Each module's tier, limits, usage and features for this workspace (drives the portal)."""
+    return modules_overview(db, ctx.org_id)
 
 
 @router.patch("/{org_id}")

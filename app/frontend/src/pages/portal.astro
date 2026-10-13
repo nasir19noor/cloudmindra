@@ -60,8 +60,12 @@ const API_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cloudmindra.com';
       <section class="card mt-4 p-6">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p class="eyebrow">Uptime monitors <span id="mon-count" class="text-fg/45"></span></p>
+            <p class="eyebrow">
+              Uptime monitors <span id="mon-count" class="text-fg/45"></span>
+              <span id="mon-plan" class="ml-2 hidden rounded-full px-2 py-0.5 align-middle text-[10px] tracking-[0.1em]"></span>
+            </p>
             <p class="mt-2 text-caption text-fg/55">We check your sites around the clock and email you when they go down, recover, or an SSL certificate is about to expire.</p>
+            <p id="mon-plan-note" class="mt-1 hidden text-caption text-fg/55"></p>
           </div>
         </div>
 
@@ -298,12 +302,30 @@ const API_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cloudmindra.com';
     const data = await res.json();
     monitors = data.monitors;
     limit = data.limit;
+    // Intervals depend on the workspace's tier: Pro-only ones are listed but disabled
     const select = document.querySelector<HTMLSelectElement>('#mon-form select')!;
-    if (!select.options.length) {
-      select.innerHTML = data.intervals
-        .map((n: number) => `<option value="${n}" ${n === 5 ? 'selected' : ''}>Every ${n} min</option>`)
-        .join('');
-    }
+    const previous = Number(select.value) || 5;
+    const all = [...data.locked_intervals, ...data.intervals].sort((a: number, b: number) => a - b);
+    const chosen = data.intervals.includes(previous) ? previous : data.intervals[0];
+    select.innerHTML = all
+      .map((n: number) => {
+        const locked = data.locked_intervals.includes(n);
+        return `<option value="${n}" ${locked ? 'disabled' : ''} ${n === chosen ? 'selected' : ''}>Every ${n} min${locked ? ' (Pro)' : ''}</option>`;
+      })
+      .join('');
+
+    const pro = data.tier === 'pro';
+    const badge = $('mon-plan');
+    badge.textContent = pro ? 'PRO' : 'FREE';
+    badge.className = `ml-2 rounded-full px-2 py-0.5 align-middle text-[10px] tracking-[0.1em] ${
+      pro ? 'bg-brand/15 text-brand' : 'bg-fg/[0.06] text-fg/60'
+    }`;
+    const note = $('mon-plan-note');
+    note.textContent = pro
+      ? `Pro: up to ${data.limit} monitors, checks every minute, ${data.history_days} days of history.`
+      : `Free: up to ${data.limit} monitors, checks every ${data.intervals[0]} minutes or more, ${data.history_days} days of history. ` +
+        'Contact CloudMindra to upgrade to Pro for 1-minute checks and more monitors.';
+    note.classList.remove('hidden');
     renderMonitors(limit);
   }
 

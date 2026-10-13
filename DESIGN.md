@@ -7,7 +7,7 @@ Update it in the same change as any decision or structural change. Diagrams: [do
 
 ## Deployment status
 
-Last verified **2026-10-13** against production (`main` at `d8db972`: PR #1 phase 1, PR #2 team invitations, workspace admin page). Verified from outside with unauthenticated requests: a route that exists answers `401` (sign-in required), a missing route `404`.
+Last verified **2026-10-14** against production (`main` at `49d73d9`: PR #1 phase 1, PR #2 team invitations, workspace admin page, PR #3 admin seat limits). Verified from outside with unauthenticated requests: a route that exists answers `401` (sign-in required), a missing route `404`.
 
 | Area | What | Status | Evidence / note |
 |---|---|---|---|
@@ -22,9 +22,10 @@ Last verified **2026-10-13** against production (`main` at `d8db972`: PR #1 phas
 | Invite page | `/portal/invite` | ✅ | 200 (one transient 502 seen while probing) |
 | Workspace admin | `/portal/workspace` for owners/admins | ✅ | 200; portal shows "Manage workspace" |
 | SES production access | Alert/invite emails to any address | ⚠️ | Invites to Gmail are not arriving (2026-10-13): domain, DKIM, DMARC and SMTP region are correct, so the account is most likely still in the SES sandbox. Request production access in the SES console (ap-southeast-1) |
-| Admin seat limits | `/admin` Workspaces section: seats used, owners, per-workspace seat limit override | 🚧 | Branch `feat/admin-seats` |
-| Invite delivery fallback | Invitation email sent in the request; on failure the inviter gets the link to share | 🚧 | Branch `feat/admin-seats` |
-| Phase 2+ | Tiers, worker container, outbox, AWS connections, other modules | 🔜 | Not built |
+| Admin seat limits | `/admin` Workspaces section: seats used, owners, per-workspace seat limit override | ✅ | `/api/admin/orgs` 401; `/admin` shows "Seat limit" |
+| Invite delivery fallback | Invitation email sent in the request; on failure the inviter gets the link to share | ✅ | Deployed with PR #3 |
+| Phase 2: tiers | Free/Pro per module (`core.org_apps`), monthly usage (`core.usage_counters`, migration `0004`), Uptime tier limits, seats 3→10 with any Pro, 2 free workspaces per user, `/admin` Free/Pro switch, portal plan badges, workspace Plan section | 🚧 | Branch `feat/phase2-tiers`; `/api/orgs/{org}/modules` is 404 on production until deployed |
+| Phase 3+ | `core/` + `apps/` layout, worker container, outbox, AWS connections, other modules | 🔜 | Not built |
 
 ---
 
@@ -113,10 +114,10 @@ Until phase 3 the uptime loop runs inside the API process (`MONITOR_WORKER=true`
 ### 4.1 Rules (agreed)
 | Topic | Decision |
 |---|---|
-| Who can create workspaces | Any user. Max **2 owned workspaces with no Pro module** per user (admin can raise). |
+| Who can create workspaces | Any user. Max **2 owned workspaces with no Pro module** per user (`catalog.FREE_WORKSPACES_PER_USER`); workspaces with any Pro module don't count. |
 | First login | Auto-create "{Name}'s workspace" with the user as owner. |
 | Roles | `owner` · `admin` · `member` · `viewer` (see 4.2). Always ≥ 1 owner. |
-| Member cap | 3 if the workspace has no Pro module; 10 once any module is Pro; admin override per workspace. |
+| Member cap | Seats = members + pending invitations. 3 if the workspace has no Pro module, 10 once any module is Pro (`catalog.WORKSPACE_SEATS`); platform-admin override per workspace (`organizations.member_limit`). |
 | Invitations | By email, 7-day token (only SHA-256 hash stored), sent from `no-reply@`. Owners and admins invite as admin/member/viewer (never owner). Accept requires the **exact verified email** invited (case-insensitive). Inviting the same address again replaces the link; invitations can be cancelled. Pending invitations count as seats. Link: `/portal/invite?token=…` (token kept in sessionStorage through sign-in, removed from the address bar). |
 | Leaving | Any member can leave; someone left with no workspace gets a new personal one. The last owner cannot leave, be demoted or be removed. |
 | Alerts | On by default for every role including viewers; each member can opt out per event type. |
@@ -149,23 +150,28 @@ ROLE_PERMISSIONS = {
 
 ---
 
-## 5. Modules, tiers and limits 🔜
+## 5. Modules, tiers and limits 🚧 (built on `feat/phase2-tiers`, not yet deployed)
 
-The catalog (modules, tiers, limits, permissions, notification events) is **code** in `core/catalog.py`; per-workspace state is in `org_apps`.
+The catalog (modules, tiers, limits, features, permissions) is **code** in `catalog.py` (moves to `core/` in phase 3); per-workspace state is in `core.org_apps`. Only `uptime` is `available`; the other modules are listed in the portal as "coming soon" with their planned limits.
 
 | Module | Free | Pro |
 |---|---|---|
-| `uptime` | 10 monitors, interval ≥ 5 min, 7 days history | 100 monitors, 1-min interval, 90 days history |
+| `uptime` ✅ enforced | 10 monitors, interval ≥ 5 min, 7 days history | 100 monitors, 1-min interval, 90 days history |
 | `review` | 1 review / month | 30 / month, PDF export |
 | `cost` | 1 AWS account, monthly granularity, 3 months history | 10 accounts, daily, 13 months, anomaly alerts |
-| `security` | 1 AWS account, 1 manual scan / month, summary | 10 accounts, daily scheduled scans, full findings, PDF + SOC2/ISO mapping |
+| `security` | 1 AWS account, 1 manual scan / month, summary | 10 accounts, 31 scans / month (daily), full findings, PDF + SOC2/ISO mapping |
 | `iac` | 2 generations / month | 50 / month, multi-environment templates |
-| workspace | 3 members | 10 members once any module is Pro |
+| workspace | 3 seats | 10 seats once any module is Pro |
 
-- **Effective limit** = `org_apps.limits` override → tier default.
-- Count limits are checked at create time; monthly limits use `usage_counters`, incremented atomically (`UPDATE … SET count = count + 1 WHERE count < :limit`) in the same transaction that queues the work.
-- Over-limit responses: HTTP **402** with a human message and an upgrade hint.
-- Pro is set manually by a platform admin in `/admin` (`tier`, `pro_since`, `pro_until`).
+- **No `org_apps` row = Free** with catalog limits, so new workspaces and new modules need no backfill. A row is created the first time an admin changes the module.
+- **Pro is active** when `tier = 'pro'`, `status` is `active` or `trial`, and `pro_until` is empty or in the future. An expired `pro_until` falls back to Free automatically.
+- **Effective limit** = `org_apps.limits` override (per key, e.g. `{"uptime.monitors": 200}`) → tier default.
+- **`entitlements.py`** is the only place modules ask: `limit()`, `require_below()` (count limits, checked at create time), `consume()` (monthly limits). Modules report live usage through `USAGE_PROVIDERS[app]`, so core never queries module tables.
+- **Monthly limits** use `core.usage_counters` (period `YYYY-MM`, UTC), incremented by one atomic `INSERT … ON CONFLICT DO UPDATE … WHERE count + n <= limit` in the caller's transaction; concurrent requests cannot overshoot (tested with 12 parallel requests on a limit of 5).
+- Over-limit responses: HTTP **402** with a human message and "Contact CloudMindra to upgrade … to Pro."
+- **Uptime enforcement:** monitor count and allowed intervals checked on create/update; the worker checks a monitor no more often than the tier's minimum (a 1-minute monitor waits 5 minutes after a downgrade); check history is pruned per workspace to 7 / 90 days. Existing monitors above a limit are kept; only new ones are blocked.
+- **Pro is set manually** by a platform admin in `/admin` (Free/Pro per module per workspace; `PUT /api/admin/orgs/{org}/modules/{app}` also takes `pro_until` and `limits`). `updated_by` records the admin.
+- Not yet: switching a module off for a workspace (every module is enabled for every workspace), billing.
 
 ---
 
@@ -287,8 +293,8 @@ Only `aws` (and `fake` for tests) is implemented. Modules declare supported prov
 | `core.organizations` | `id`, `name`, `created_by`, `currency`, `member_limit` (override) | ✅ |
 | `core.memberships` | `org_id`, `user_id`, `role` — UNIQUE(org_id,user_id) | ✅ |
 | `core.invitations` | `org_id`, `email`, `role`, `token_hash`, `invited_by`, `expires_at`, `accepted_at` | ✅ |
-| `core.org_apps` | PK(`org_id`,`app_key`), `tier` free/pro, `status`, `limits` jsonb, `pro_since`, `pro_until` | 🔜 |
-| `core.usage_counters` | PK(`org_id`,`metric`,`period`), `count` | 🔜 |
+| `core.org_apps` | PK(`org_id`,`app_key`), `tier` free/pro, `status` active/trial/past_due/cancelled, `limits` jsonb, `pro_since`, `pro_until`, `updated_by` — no row = Free | 🚧 |
+| `core.usage_counters` | PK(`org_id`,`metric`,`period` `YYYY-MM`), `count` | 🚧 |
 | `core.jobs` | `org_id`, `app_key`, `type`, `payload`, `status`, `run_at`, `attempts`, `locked_by`, `result`, `error` | 🔜 |
 | `core.schedules` | `org_id`, `app_key`, `type`, `payload`, `interval`, `next_run_at`, `enabled` | 🔜 |
 | `core.notification_prefs` | PK(`membership_id`,`event_key`), `email` | 🔜 |
@@ -308,8 +314,9 @@ Only `aws` (and `fake` for tests) is implemented. Modules declare supported prov
 - `0001` baseline = current schema (`alembic stamp` on prod).
 - `0002` create schemas `core`, `uptime`, `site` and roles; `ALTER TABLE … SET SCHEMA` for existing tables; drop the `monitors.user_id → users` FK; grant each role its schema.
 - `0003` workspaces: organizations + memberships + invitations, backfill personal workspaces, `uptime.monitors.org_id`.
-- `0004` platform tables + outbox per schema; every workspace gets every module on `free`.
-- `0005` cloud tables when the first AWS module lands.
+- `0004` 🚧 `core.org_apps` + `core.usage_counters` (no backfill: no row = Free).
+- `0005` platform tables for phase 3 (jobs, schedules, notification prefs, audit) + outbox per schema.
+- `0006` cloud tables when the first AWS module lands.
 
 The container runs `migrate.py` (see §2.1) before start; take a `pg_dump` before each migration deploy. ✅ `0001`–`0003` are deployed; `create_all` is no longer used. Models use the index naming convention `ix_<table>_<column>` (no schema prefix) so autogenerate matches the migrations.
 
@@ -320,9 +327,9 @@ The container runs `migrate.py` (see §2.1) before start; take a `pg_dump` befor
 | Area | Routes |
 |---|---|
 | Auth ✅ | `GET /api/auth/login`, `/callback`, `/logout`, `/me` |
-| Platform admin ✅ | `/api/admin/me`, `/analytics`, `/users`, `PUT /users/{id}` (is_admin), `POST /logout` · 🚧 `GET /orgs` (seats used, owners, limits), `PUT /orgs/{id}` (`member_limit` 1–1000, `null` = default) |
+| Platform admin ✅ | `/api/admin/me`, `/analytics`, `/users`, `PUT /users/{id}` (is_admin), `POST /logout` · ✅ `GET /orgs` (seats used, owners, limits; 🚧 + module tiers), `PUT /orgs/{id}` (`member_limit` 1–1000, `null` = default) · 🚧 `PUT /orgs/{id}/modules/{app}` (`tier`, `pro_until`, `limits`) |
 | Uptime ✅ | `GET/POST /api/orgs/{org}/uptime/monitors`, `PATCH/DELETE …/monitors/{id}`, `POST …/{id}/check`, `GET …/{id}/checks` (read: `uptime.read`, write: `uptime.write`) |
-| Workspaces ✅ | `GET/POST /api/orgs`, `GET/PATCH/DELETE /api/orgs/{org}` (name, currency), `POST /api/orgs/{org}/select` (remember last workspace) |
+| Workspaces ✅ | `GET/POST /api/orgs`, `GET/PATCH/DELETE /api/orgs/{org}` (name, currency), `POST /api/orgs/{org}/select` (remember last workspace) · 🚧 `GET /api/orgs/{org}/modules` (tier, limits, usage, features per module; also included in `GET /api/orgs/{org}`); uptime list adds `tier`, `locked_intervals`, `history_days` |
 | Team ✅ | `GET /api/orgs/{org}/members` (`members.read`) · `PATCH/DELETE /api/orgs/{org}/members/{user}` (`members.manage`; owner role needs `org.transfer`; DELETE on yourself = leave) · `GET/POST /api/orgs/{org}/invitations`, `DELETE …/invitations/{id}` (`members.manage`) · `GET /api/invitations/preview?token=` (no sign-in) · `POST /api/invitations/accept` |
 | Platform 🔜 | `/api/orgs/{org}/jobs/{id}`, `/reports[/{id}/download]`, `/connections[/{id}]`, `/activity` |
 | Modules 🔜 | `/api/orgs/{org}/{app_key}/…` |
@@ -335,12 +342,12 @@ Errors: 401 not signed in · 403 role/module · 404 not found or not a member ·
 
 | Route | Purpose | Status |
 |---|---|---|
-| `/portal` | Sign-in, workspace switcher (Manage workspace / Leave), uptime dashboard | ✅ |
-| `/admin` | Platform admin: analytics, users + admin toggle, contacts ✅; Workspaces with seat-limit override 🚧; later tiers, jobs 🔜 | ✅ |
+| `/portal` | Sign-in, workspace switcher (Manage workspace / Leave), uptime dashboard ✅; Free/Pro badge, plan note, Pro-only intervals shown as locked 🚧 | ✅ |
+| `/admin` | Platform admin: analytics, users + admin toggle, contacts, Workspaces with seat-limit override ✅; Free/Pro switch per module 🚧; jobs 🔜 | ✅ |
 | `/portal/[org]` | Overview tiles per enabled module (status, usage) | 🔜 |
 | `/portal/[org]/{uptime,review,cost,security,iac}` | Module pages | 🔜 |
 | `/portal/[org]/connections` | AWS accounts | 🔜 |
-| `/portal/workspace?org=` | Workspace admin for owners and admins: name & currency, team (members, roles, invitations, seats), leave, delete (owner, type-to-confirm). Members/viewers see a "not allowed" notice and can leave from `/portal` | ✅ |
+| `/portal/workspace?org=` | Workspace admin for owners and admins: name & currency, team (members, roles, invitations, seats), leave, delete (owner, type-to-confirm). Members/viewers see a "not allowed" notice and can leave from `/portal` ✅; Plan section (each module's tier, limits, usage, features) 🚧 | ✅ |
 | `/portal/[org]/reports` · `/settings` | Files · tiers & usage, activity, alert preferences (later merged with `/portal/workspace`) | 🔜 |
 | `/portal/invite` | Accept invitation (preview before sign-in, token kept in sessionStorage) | ✅ |
 
@@ -365,7 +372,7 @@ The sidebar is built from `GET /api/orgs/{org}` (`role`, modules with tier/limit
 |---|---|---|
 | 0 | Cognito + Google login, portal, admin via `is_admin`/`ADMIN_EMAIL`, uptime monitor | ✅ |
 | 1 | Alembic, Postgres schemas + roles per module (move existing tables, drop cross-schema FKs), workspaces, memberships, backfill, `org_access`; uptime API scoped to workspaces; portal workspace switcher | ✅ (module DB roles ⚠️ optional, not yet set up) |
-| 2 | Catalog, Free/Pro per module, `org_apps`, limits & usage, isolation test | 🔜 |
+| 2 | Catalog, Free/Pro per module, `org_apps`, limits & usage, isolation test (every `/api/orgs/{org_id}/…` route returns 404 to non-members, enumerated from OpenAPI) | 🚧 |
 | 3 | `core/` + `apps/` layout, engine per module role, worker container, job queue, outbox per schema + relay, uptime moved, notify, audit, module summary APIs | 🔜 |
 | 4 | Team: invitations, roles, member caps, `/portal/invite`, `/portal/workspace` (✅ deployed early); alert preferences (🔜) | ✅ / 🔜 |
 | 5 | Portal: workspace switcher, module sidebar, Team, Settings | 🔜 |
@@ -390,4 +397,7 @@ The sidebar is built from `GET /api/orgs/{org}` (`role`, modules with tier/limit
 | 2026-10-13 | User-selectable display currency; store original, convert with daily ECB rates. |
 | 2026-10-13 | Team rules: any user creates workspaces (max 2 free-only), member cap 3/10, exact-email invites, alerts default on for all roles. |
 | 2026-10-13 | Deployed: phase 1 (PR #1), team invitations (PR #2), workspace admin page (`d8db972`). |
+| 2026-10-14 | Tiers: no `org_apps` row means Free (no backfill); Pro set by hand per module in `/admin`; expired `pro_until` falls back to Free. |
+| 2026-10-14 | Free Uptime keeps 7 days of check history (was 30 before tiers); Pro keeps 90. Monitors above a limit after a downgrade are kept, new ones blocked. |
+| 2026-10-14 | Deployed: PR #3 admin seat limits and invite-link fallback. |
 | 2026-10-13 | Database prepared for microservices: Postgres schema + role per module, no cross-schema foreign keys, access checks only via `org_access()`, transactional outbox per schema, cross-module screens via summary APIs, workspace deletion as an `org.deleted` event. |

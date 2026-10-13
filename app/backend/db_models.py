@@ -4,6 +4,7 @@ Foreign keys only point inside the same schema. Columns that refer to another
 schema (org_id, created_by, …) are plain indexed values.
 """
 from sqlalchemy import Column, String, DateTime, Integer, Boolean, Text, Float, ForeignKey, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import false, func
 
 from database import CoreBase, SiteBase, UptimeBase
@@ -118,6 +119,32 @@ class Invitation(CoreBase):
     expires_at = Column(DateTime(timezone=True), nullable=False)
     accepted_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class OrgApp(CoreBase):
+    """A workspace's tier for one module. No row means Free with catalog defaults."""
+    __tablename__ = "org_apps"
+
+    org_id = Column(String, ForeignKey("core.organizations.id", ondelete="CASCADE"), primary_key=True)
+    app_key = Column(String(20), primary_key=True)
+    tier = Column(String(10), nullable=False, default="free", server_default="free")  # free | pro
+    status = Column(String(10), nullable=False, default="active", server_default="active")  # active | trial | past_due | cancelled
+    limits = Column(JSONB, nullable=True)  # per-workspace overrides, e.g. {"uptime.monitors": 200}
+    pro_since = Column(DateTime(timezone=True), nullable=True)
+    pro_until = Column(DateTime(timezone=True), nullable=True)  # NULL = no end date
+    updated_by = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class UsageCounter(CoreBase):
+    """Monthly usage for "*.per_month" limits (DESIGN.md §5)."""
+    __tablename__ = "usage_counters"
+
+    org_id = Column(String, ForeignKey("core.organizations.id", ondelete="CASCADE"), primary_key=True)
+    metric = Column(String(50), primary_key=True)
+    period = Column(String(7), primary_key=True)  # "YYYY-MM" (UTC)
+    count = Column(Integer, nullable=False, default=0, server_default="0")
 
 
 # --- schema uptime: Uptime Monitor module ------------------------------------
