@@ -1,0 +1,132 @@
+---
+import Layout from '../../layouts/Layout.astro';
+
+const API_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cloudmindra.com';
+---
+
+<Layout title="Workspace invitation" description="Accept an invitation to a CloudMindra workspace">
+  <section class="px-6 pb-24 pt-36" data-api={API_URL} id="invite">
+    <div class="card mx-auto max-w-[460px] space-y-5 p-8">
+      <p class="eyebrow">Workspace invitation</p>
+      <p id="inv-loading" class="text-body text-fg/60">Loading…</p>
+
+      <div id="inv-details" class="hidden space-y-2">
+        <h1 class="font-display text-[28px] font-light leading-tight">Join <span id="inv-workspace"></span></h1>
+        <p class="text-body text-fg/70"><span id="inv-by"></span> invited <b id="inv-email"></b> as <b id="inv-role"></b>.</p>
+      </div>
+
+      <p id="inv-error" class="hidden rounded-xl bg-red-50 px-4 py-3 text-caption text-red-700" role="alert"></p>
+
+      <!-- Signed out -->
+      <div id="inv-signin" class="hidden space-y-3">
+        <p class="text-caption text-fg/60">Sign in with <b id="inv-email-2"></b> to accept.</p>
+        <a
+          href={`${API_URL}/api/auth/login?provider=google&next=/portal/invite`}
+          class="flex h-[44px] w-full items-center justify-center gap-3 rounded-full bg-fg text-body font-medium text-canvas transition-opacity hover:opacity-90"
+        >
+          Continue with Google
+        </a>
+        <a href={`${API_URL}/api/auth/login?next=/portal/invite`} class="btn-secondary h-[44px] w-full">Sign in with email</a>
+      </div>
+
+      <!-- Signed in -->
+      <div id="inv-accept" class="hidden space-y-3">
+        <p class="text-caption text-fg/60">Signed in as <b id="inv-me"></b>.</p>
+        <button id="inv-accept-btn" type="button" class="h-[44px] w-full rounded-full bg-fg text-body font-medium text-canvas transition-opacity hover:opacity-90 disabled:opacity-60">
+          Accept invitation
+        </button>
+        <a id="inv-switch" href={`${API_URL}/api/auth/logout`} class="btn-secondary hidden h-[40px] w-full">Sign out and use another account</a>
+      </div>
+
+      <a id="inv-portal" href="/portal" class="btn-secondary hidden h-[40px] w-full">Go to the portal</a>
+    </div>
+  </section>
+</Layout>
+
+<script>
+  const root = document.getElementById('invite')!;
+  const API = root.dataset.api as string;
+  const KEY = 'cm_invite_token';
+  const $ = (id: string) => document.getElementById(id)!;
+  const show = (id: string, on = true) => $(id).classList.toggle('hidden', !on);
+  const ROLE: Record<string, string> = { admin: 'Admin', member: 'Member', viewer: 'Viewer' };
+
+  function storage(): Storage | null {
+    try {
+      return sessionStorage;
+    } catch {
+      return null;
+    }
+  }
+
+  function fail(message: string) {
+    show('inv-loading', false);
+    $('inv-error').textContent = message;
+    show('inv-error');
+    show('inv-portal');
+  }
+
+  async function init() {
+    // Keep the token across the sign-in round trip, and take it out of the address bar
+    const fromUrl = new URLSearchParams(location.search).get('token');
+    if (fromUrl) {
+      storage()?.setItem(KEY, fromUrl);
+      history.replaceState(null, '', location.pathname);
+    }
+    const token = fromUrl ?? storage()?.getItem(KEY);
+    if (!token) return fail('This page needs the link from your invitation email.');
+
+    const res = await fetch(`${API}/api/invitations/preview?token=${encodeURIComponent(token)}`).catch(() => null);
+    if (!res?.ok) {
+      const body = res ? await res.json().catch(() => ({})) : {};
+      storage()?.removeItem(KEY);
+      return fail(body.detail || 'Could not load this invitation.');
+    }
+    const inv = await res.json();
+    show('inv-loading', false);
+    $('inv-workspace').textContent = inv.workspace;
+    $('inv-by').textContent = inv.invited_by || 'Someone';
+    $('inv-email').textContent = inv.email;
+    $('inv-email-2').textContent = inv.email;
+    $('inv-role').textContent = ROLE[inv.role] ?? inv.role;
+    show('inv-details');
+
+    if (inv.status !== 'pending') {
+      storage()?.removeItem(KEY);
+      return fail(inv.status === 'expired' ? 'This invitation has expired. Ask for a new one.' : 'This invitation has already been used.');
+    }
+
+    const me = await fetch(`${API}/api/auth/me`, { credentials: 'include' }).catch(() => null);
+    if (!me?.ok) return show('inv-signin');
+    const user = await me.json();
+    $('inv-me').textContent = user.email;
+    show('inv-accept');
+    if (user.email.toLowerCase() !== inv.email.toLowerCase()) {
+      ($('inv-accept-btn') as HTMLButtonElement).disabled = true;
+      show('inv-switch');
+      $('inv-error').textContent = `This invitation is for ${inv.email}. Sign in with that address to accept it.`;
+      show('inv-error');
+    }
+
+    $('inv-accept-btn').addEventListener('click', async () => {
+      const btn = $('inv-accept-btn') as HTMLButtonElement;
+      btn.disabled = true;
+      const r = await fetch(`${API}/api/invitations/accept`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      }).catch(() => null);
+      if (!r?.ok) {
+        const body = r ? await r.json().catch(() => ({})) : {};
+        btn.disabled = false;
+        $('inv-error').textContent = body.detail || 'Could not accept the invitation.';
+        return show('inv-error');
+      }
+      storage()?.removeItem(KEY);
+      location.href = '/portal';
+    });
+  }
+
+  init();
+</script>
