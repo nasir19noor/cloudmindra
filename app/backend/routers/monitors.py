@@ -7,7 +7,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from cognito_auth import require_user
 from database import get_db
 from monitoring import (
     INTERVALS,
@@ -15,14 +14,18 @@ from monitoring import (
     UnsafeURL,
     assert_public_host,
     aware,
-    max_monitors_per_user,
+    max_monitors_per_workspace,
     normalize_url,
     run_check,
     utcnow,
 )
+from orgs import OrgContext, org_access, org_query
 import db_models
 
-router = APIRouter(prefix="/api/monitors", tags=["monitors"])
+router = APIRouter(prefix="/api/orgs/{org_id}/uptime/monitors", tags=["uptime"])
+
+READ = org_access("uptime.read")
+WRITE = org_access("uptime.write")
 
 RECENT_CHECKS = 30  # bars shown per monitor in the portal
 CHECK_NOW_COOLDOWN = timedelta(seconds=20)
@@ -45,10 +48,10 @@ def _iso(dt):
     return dt.isoformat() if dt else None
 
 
-def _owned(db: Session, monitor_id: str, user: dict) -> db_models.Monitor:
-    m = db.get(db_models.Monitor, monitor_id)
-    # Same 404 for "missing" and "someone else's" so ids cannot be probed
-    if m is None or m.user_id != user["sub"]:
+def _owned(db: Session, monitor_id: str, ctx: OrgContext) -> db_models.Monitor:
+    m = org_query(db, db_models.Monitor, ctx).filter(db_models.Monitor.id == monitor_id).first()
+    # Same 404 for "missing" and "another workspace's" so ids cannot be probed
+    if m is None:
         raise HTTPException(status_code=404, detail="Monitor not found")
     return m
 
@@ -104,32 +107,25 @@ def _serialize(db: Session, monitors: list[db_models.Monitor]) -> list[dict]:
 
 
 @router.get("")
-def list_monitors(user: dict = Depends(require_user), db: Session = Depends(get_db)):
-    monitors = (
-        db.query(db_models.Monitor)
-        .filter(db_models.Monitor.user_id == user["sub"])
-        .order_by(db_models.Monitor.created_at)
-        .all()
-    )
-    return {"monitors": _serialize(db, monitors), "limit": max_monitors_per_user(), "intervals": INTERVALS}
+def list_monitors(ctx: OrgContext = Depends(READ), db: Session = Depends(get_db)):
+    monitors = org_query(db, db_models.Monitor, ctx).order_by(db_models.Monitor.created_at).all()
+    return {"monitors": _serialize(db, monitors), "limit": max_monitors_per_workspace(), "intervals": INTERVALS}
 
 
 @router.post("", status_code=201)
-async def create_monitor(payload: MonitorCreate, user: dict = Depends(require_user), db: Session = Depends(get_db)):
+async def create_monitor(payload: MonitorCreate, ctx: OrgContext = Depends(WRITE), db: Session = Depends(get_db)):
     _check_interval(payload.interval_minutes)
-    if db.get(db_models.User, user["sub"]) is None:
-        raise HTTPException(status_code=401, detail="Please sign in again")
-    count = db.query(db_models.Monitor).filter(db_models.Monitor.user_id == user["sub"]).count()
-    if count >= max_monitors_per_user():
-        raise HTTPException(status_code=403, detail=f"You can monitor up to {max_monitors_per_user()} URLs")
+    limit = max_monitors_per_workspace()
+    if org_query(db, db_models.Monitor, ctx).count() >= limit:
+        raise HTTPException(status_code=403, detail=f"This workspace can monitor up to {limit} URLs")
     try:
         url = normalize_url(payload.url)
         await asyncio.to_thread(assert_public_host, url)
     except UnsafeURL as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    m = db_models.Monitor(id=str(uuid.uuid4()), user_id=user["sub"], name=payload.name.strip(), url=url,
-                          interval_minutes=payload.interval_minutes)
+    m = db_models.Monitor(id=str(uuid.uuid4()), org_id=ctx.org_id, created_by=ctx.user_id,
+                          name=payload.name.strip(), url=url, interval_minutes=payload.interval_minutes)
     db.add(m)
     db.commit()
 
@@ -140,9 +136,9 @@ async def create_monitor(payload: MonitorCreate, user: dict = Depends(require_us
 
 
 @router.patch("/{monitor_id}")
-def update_monitor(monitor_id: str, payload: MonitorUpdate, user: dict = Depends(require_user),
+def update_monitor(monitor_id: str, payload: MonitorUpdate, ctx: OrgContext = Depends(WRITE),
                    db: Session = Depends(get_db)):
-    m = _owned(db, monitor_id, user)
+    m = _owned(db, monitor_id, ctx)
     if payload.name is not None:
         m.name = payload.name.strip()
     if payload.interval_minutes is not None:
@@ -157,16 +153,16 @@ def update_monitor(monitor_id: str, payload: MonitorUpdate, user: dict = Depends
 
 
 @router.delete("/{monitor_id}", status_code=204)
-def delete_monitor(monitor_id: str, user: dict = Depends(require_user), db: Session = Depends(get_db)):
-    m = _owned(db, monitor_id, user)
+def delete_monitor(monitor_id: str, ctx: OrgContext = Depends(WRITE), db: Session = Depends(get_db)):
+    m = _owned(db, monitor_id, ctx)
     db.query(db_models.MonitorCheck).filter(db_models.MonitorCheck.monitor_id == m.id).delete()
     db.delete(m)
     db.commit()
 
 
 @router.post("/{monitor_id}/check")
-async def check_now(monitor_id: str, user: dict = Depends(require_user), db: Session = Depends(get_db)):
-    m = _owned(db, monitor_id, user)
+async def check_now(monitor_id: str, ctx: OrgContext = Depends(WRITE), db: Session = Depends(get_db)):
+    m = _owned(db, monitor_id, ctx)
     if m.last_checked_at and utcnow() - aware(m.last_checked_at) < CHECK_NOW_COOLDOWN:
         raise HTTPException(status_code=429, detail="Checked a moment ago. Try again in a few seconds.")
     await run_check(m.id, m.url, ssl_due=False)
@@ -175,9 +171,9 @@ async def check_now(monitor_id: str, user: dict = Depends(require_user), db: Ses
 
 
 @router.get("/{monitor_id}/checks")
-def monitor_checks(monitor_id: str, hours: int = 24, user: dict = Depends(require_user),
+def monitor_checks(monitor_id: str, hours: int = 24, ctx: OrgContext = Depends(READ),
                    db: Session = Depends(get_db)):
-    m = _owned(db, monitor_id, user)
+    m = _owned(db, monitor_id, ctx)
     hours = max(1, min(hours, 24 * 30))
     rows = (
         db.query(db_models.MonitorCheck)

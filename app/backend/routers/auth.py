@@ -26,6 +26,7 @@ from cognito_auth import (
     verify_id_token,
 )
 from database import get_db
+from orgs import ensure_workspace
 import db_models
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -95,6 +96,9 @@ def callback(
     # Only a verified address can claim the seeded admin email
     if user["email_verified"] and user["email"].lower() in seed_admin_emails():
         row.is_admin = True
+    db.flush()
+    # First login (or removed from every workspace): create a personal workspace
+    ensure_workspace(db, row)
     db.commit()
 
     response = _portal_redirect(next_page=next_page)
@@ -126,4 +130,5 @@ def me(user: dict = Depends(require_user), db: Session = Depends(get_db)):
     return {
         **{k: user[k] for k in ("sub", "email", "name", "provider", "groups")},
         "is_admin": bool(row and row.is_admin),
+        "last_org_id": row.last_org_id if row else None,
     }

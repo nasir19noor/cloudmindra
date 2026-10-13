@@ -45,8 +45,17 @@ const API_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cloudmindra.com';
         </div>
       </div>
 
+      <!-- Workspace switcher -->
+      <div class="mt-8 flex flex-wrap items-center gap-3">
+        <label for="ws-select" class="eyebrow">Workspace</label>
+        <select id="ws-select" class="field h-[40px] w-auto min-w-[220px] py-0"></select>
+        <span id="ws-role" class="rounded-full bg-fg/[0.06] px-3 py-1 text-[12px] font-medium capitalize text-fg/70"></span>
+        <button id="ws-new" type="button" class="btn-secondary h-[36px] text-caption">New workspace</button>
+      </div>
+      <p id="ws-error" class="mt-2 hidden text-caption text-red-600" role="alert"></p>
+
       <!-- Uptime monitors -->
-      <section class="card mt-8 p-6">
+      <section class="card mt-4 p-6">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p class="eyebrow">Uptime monitors <span id="mon-count" class="text-fg/45"></span></p>
@@ -174,11 +183,15 @@ const API_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cloudmindra.com';
             </div>
             <a href="${esc(m.url)}" target="_blank" rel="noopener noreferrer" class="mt-1 block truncate text-caption text-fg/55 hover:underline">${esc(m.url)}</a>
           </div>
-          <div class="flex shrink-0 gap-2">
+          ${
+            canWrite()
+              ? `<div class="flex shrink-0 gap-2">
             <button data-action="check" class="btn-secondary h-[30px] px-3 text-[12px]" ${m.is_active ? '' : 'disabled'}>Check now</button>
             <button data-action="toggle" class="btn-secondary h-[30px] px-3 text-[12px]">${m.is_active ? 'Pause' : 'Resume'}</button>
             <button data-action="delete" class="btn-secondary h-[30px] px-3 text-[12px] text-red-600">Delete</button>
-          </div>
+          </div>`
+              : ''
+          }
         </div>
         <div class="mt-4 flex items-end gap-[2px]" aria-label="Recent checks">${bars}</div>
         <div class="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-caption text-fg/60">
@@ -194,16 +207,73 @@ const API_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cloudmindra.com';
 
   function renderMonitors(limit?: number) {
     if (limit != null) $('mon-count').textContent = `· ${monitors.length} of ${limit}`;
+    $('mon-form').classList.toggle('hidden', !canWrite());
+    const empty = canWrite() ? 'Add your first URL above to start monitoring.' : 'No monitors in this workspace yet.';
     $('mon-list').innerHTML = monitors.length
       ? monitors.map(renderMonitor).join('')
-      : '<p class="rounded-2xl px-5 py-8 text-center text-caption text-fg/50 ring-1 ring-dashed ring-fg/10">Add your first URL above to start monitoring.</p>';
+      : `<p class="rounded-2xl px-5 py-8 text-center text-caption text-fg/50 ring-1 ring-dashed ring-fg/10">${empty}</p>`;
   }
 
   let limit = 10;
 
+  // --- Workspaces -----------------------------------------------------------
+  type Workspace = { id: string; name: string; role: 'owner' | 'admin' | 'member' | 'viewer' };
+  let workspaces: Workspace[] = [];
+  let orgId = '';
+  let role: Workspace['role'] = 'viewer';
+  const canWrite = () => role !== 'viewer';
+  const monUrl = (path = '') => `/api/orgs/${encodeURIComponent(orgId)}/uptime/monitors${path}`;
+
+  function showWsError(msg: string | null) {
+    $('ws-error').textContent = msg ?? '';
+    $('ws-error').classList.toggle('hidden', !msg);
+  }
+
+  function useWorkspace(id: string) {
+    const ws = workspaces.find((w) => w.id === id) ?? workspaces[0];
+    orgId = ws.id;
+    role = ws.role;
+    ($('ws-select') as HTMLSelectElement).value = orgId;
+    $('ws-role').textContent = role;
+  }
+
+  async function loadWorkspaces(preferId?: string) {
+    const res = await api('/api/orgs');
+    if (!res.ok) throw new Error('workspaces');
+    const data = await res.json();
+    workspaces = data.workspaces;
+    ($('ws-select') as HTMLSelectElement).innerHTML = workspaces
+      .map((w) => `<option value="${esc(w.id)}">${esc(w.name)}</option>`)
+      .join('');
+    useWorkspace(preferId ?? data.last_org_id);
+  }
+
+  $('ws-select').addEventListener('change', async (e) => {
+    showWsError(null);
+    useWorkspace((e.target as HTMLSelectElement).value);
+    monitors = [];
+    renderMonitors();
+    api(`/api/orgs/${encodeURIComponent(orgId)}/select`, { method: 'POST' }).catch(() => {});
+    await loadMonitors();
+  });
+
+  $('ws-new').addEventListener('click', async () => {
+    const name = prompt('Name of the new workspace, e.g. your company or project')?.trim();
+    if (!name) return;
+    showWsError(null);
+    const res = await api('/api/orgs', { method: 'POST', body: JSON.stringify({ name }) }).catch(() => null);
+    if (!res?.ok) return showWsError(await errorText(res, 'Could not create the workspace'));
+    const created = await res.json();
+    await loadWorkspaces(created.id);
+    monitors = [];
+    await loadMonitors();
+  });
+
   async function loadMonitors() {
-    const res = await api('/api/monitors').catch(() => null);
-    if (!res?.ok) return;
+    const forOrg = orgId;
+    const res = await api(monUrl()).catch(() => null);
+    // Ignore a slow response for a workspace the user has already switched away from
+    if (!res?.ok || forOrg !== orgId) return;
     const data = await res.json();
     monitors = data.monitors;
     limit = data.limit;
@@ -230,7 +300,7 @@ const API_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cloudmindra.com';
     btn.disabled = true;
     btn.textContent = 'Checking…';
     showMonError(null);
-    const res = await api('/api/monitors', {
+    const res = await api(monUrl(), {
       method: 'POST',
       body: JSON.stringify({
         name: data.get('name'),
@@ -260,10 +330,10 @@ const API_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cloudmindra.com';
     btn.disabled = true;
 
     let res: Response | null = null;
-    if (action === 'check') res = await api(`/api/monitors/${id}/check`, { method: 'POST' }).catch(() => null);
+    if (action === 'check') res = await api(monUrl(`/${id}/check`), { method: 'POST' }).catch(() => null);
     if (action === 'toggle')
-      res = await api(`/api/monitors/${id}`, { method: 'PATCH', body: JSON.stringify({ is_active: !m.is_active }) }).catch(() => null);
-    if (action === 'delete') res = await api(`/api/monitors/${id}`, { method: 'DELETE' }).catch(() => null);
+      res = await api(monUrl(`/${id}`), { method: 'PATCH', body: JSON.stringify({ is_active: !m.is_active }) }).catch(() => null);
+    if (action === 'delete') res = await api(monUrl(`/${id}`), { method: 'DELETE' }).catch(() => null);
 
     if (!res?.ok) {
       btn.disabled = false;
@@ -295,6 +365,7 @@ const API_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cloudmindra.com';
       $('user-provider').textContent = user.provider;
       $('admin-link').classList.toggle('hidden', !user.is_admin);
       show('account');
+      await loadWorkspaces();
       await loadMonitors();
       // Keep statuses fresh while the page is open
       setInterval(() => document.visibilityState === 'visible' && loadMonitors(), 60_000);
