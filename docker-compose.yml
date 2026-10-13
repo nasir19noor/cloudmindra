@@ -17,3 +17,14 @@ services:
     env_file:
       - ./app/backend/.env
     restart: unless-stopped
+
+  # Background work (DESIGN.md §2.2): outbox relay, job queue, uptime checks.
+  # Same image as the backend; WORKER_APPS in .env can limit which module loops it runs.
+  worker:
+    build: ./app/backend
+    container_name: cloudmindra-worker
+    network_mode: host
+    env_file:
+      - ./app/backend/.env
+    command: ["sh", "-c", "python migrate.py && exec python worker.py"]
+    restart: unless-stopped

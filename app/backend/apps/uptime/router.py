@@ -7,8 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from database import get_db
-from monitoring import (
+from core.database import get_db
+from apps.uptime.service import (
     INTERVALS,
     allowed_intervals,
     SSL_WARN_DAYS,
@@ -19,11 +19,12 @@ from monitoring import (
     run_check,
     utcnow,
 )
-from entitlements import limits as module_limits, require_below, tier, upgrade_hint
-from orgs import OrgContext, org_access, org_query
-import db_models
-
-router = APIRouter(prefix="/api/orgs/{org_id}/uptime/monitors", tags=["uptime"])
+from core.entitlements import limits as module_limits, require_below, tier, upgrade_hint
+from core.audit import audit_ctx
+from core.orgs import OrgContext, org_access, org_query
+from apps.uptime import models as db_models
+# Mounted under /api/orgs/{org_id}/uptime by `router` at the end of this file
+monitors_router = APIRouter(prefix="/monitors")
 
 READ = org_access("uptime.read")
 WRITE = org_access("uptime.write")
@@ -111,7 +112,7 @@ def _serialize(db: Session, monitors: list[db_models.Monitor]) -> list[dict]:
     return out
 
 
-@router.get("")
+@monitors_router.get("")
 def list_monitors(ctx: OrgContext = Depends(READ), db: Session = Depends(get_db)):
     monitors = org_query(db, db_models.Monitor, ctx).order_by(db_models.Monitor.created_at).all()
     lim = module_limits(db, ctx.org_id, "uptime")
@@ -125,7 +126,7 @@ def list_monitors(ctx: OrgContext = Depends(READ), db: Session = Depends(get_db)
     }
 
 
-@router.post("", status_code=201)
+@monitors_router.post("", status_code=201)
 async def create_monitor(payload: MonitorCreate, ctx: OrgContext = Depends(WRITE), db: Session = Depends(get_db)):
     _check_interval(db, ctx, payload.interval_minutes)
     require_below(db, ctx.org_id, "uptime.monitors", org_query(db, db_models.Monitor, ctx).count())
@@ -138,6 +139,8 @@ async def create_monitor(payload: MonitorCreate, ctx: OrgContext = Depends(WRITE
     m = db_models.Monitor(id=str(uuid.uuid4()), org_id=ctx.org_id, created_by=ctx.user_id,
                           name=payload.name.strip(), url=url, interval_minutes=payload.interval_minutes)
     db.add(m)
+    audit_ctx(db, ctx, "uptime.monitor.created", app_key="uptime", target_id=m.id,
+              metadata={"name": m.name, "url": m.url, "interval_minutes": m.interval_minutes})
     db.commit()
 
     # First result straight away so the customer sees it working
@@ -146,32 +149,40 @@ async def create_monitor(payload: MonitorCreate, ctx: OrgContext = Depends(WRITE
     return _serialize(db, [db.get(db_models.Monitor, m.id)])[0]
 
 
-@router.patch("/{monitor_id}")
+@monitors_router.patch("/{monitor_id}")
 def update_monitor(monitor_id: str, payload: MonitorUpdate, ctx: OrgContext = Depends(WRITE),
                    db: Session = Depends(get_db)):
     m = _owned(db, monitor_id, ctx)
-    if payload.name is not None:
+    changes = {}
+    if payload.name is not None and payload.name.strip() != m.name:
+        changes["name"] = [m.name, payload.name.strip()]
         m.name = payload.name.strip()
     if payload.interval_minutes is not None:
         _check_interval(db, ctx, payload.interval_minutes)
+        if payload.interval_minutes != m.interval_minutes:
+            changes["interval_minutes"] = [m.interval_minutes, payload.interval_minutes]
         m.interval_minutes = payload.interval_minutes
     if payload.is_active is not None and payload.is_active != m.is_active:
+        changes["is_active"] = [m.is_active, payload.is_active]
         m.is_active = payload.is_active
         # Resume from a clean slate rather than alerting on stale failures
         m.consecutive_failures = 0
+    if changes:
+        audit_ctx(db, ctx, "uptime.monitor.updated", app_key="uptime", target_id=m.id, metadata=changes)
     db.commit()
     return _serialize(db, [m])[0]
 
 
-@router.delete("/{monitor_id}", status_code=204)
+@monitors_router.delete("/{monitor_id}", status_code=204)
 def delete_monitor(monitor_id: str, ctx: OrgContext = Depends(WRITE), db: Session = Depends(get_db)):
     m = _owned(db, monitor_id, ctx)
+    audit_ctx(db, ctx, "uptime.monitor.deleted", app_key="uptime", target_id=m.id, metadata={"name": m.name, "url": m.url})
     db.query(db_models.MonitorCheck).filter(db_models.MonitorCheck.monitor_id == m.id).delete()
     db.delete(m)
     db.commit()
 
 
-@router.post("/{monitor_id}/check")
+@monitors_router.post("/{monitor_id}/check")
 async def check_now(monitor_id: str, ctx: OrgContext = Depends(WRITE), db: Session = Depends(get_db)):
     m = _owned(db, monitor_id, ctx)
     if m.last_checked_at and utcnow() - aware(m.last_checked_at) < CHECK_NOW_COOLDOWN:
@@ -181,7 +192,7 @@ async def check_now(monitor_id: str, ctx: OrgContext = Depends(WRITE), db: Sessi
     return _serialize(db, [db.get(db_models.Monitor, m.id)])[0]
 
 
-@router.get("/{monitor_id}/checks")
+@monitors_router.get("/{monitor_id}/checks")
 def monitor_checks(monitor_id: str, hours: int = 24, ctx: OrgContext = Depends(READ),
                    db: Session = Depends(get_db)):
     m = _owned(db, monitor_id, ctx)
@@ -198,3 +209,19 @@ def monitor_checks(monitor_id: str, hours: int = 24, ctx: OrgContext = Depends(R
         {"at": _iso(c.checked_at), "ok": c.ok, "status_code": c.status_code, "ms": c.response_ms, "error": c.error}
         for c in rows
     ]
+
+
+router = APIRouter(prefix="/api/orgs/{org_id}/uptime", tags=["uptime"])
+
+
+@router.get("/summary")
+def summary(ctx: OrgContext = Depends(READ), db: Session = Depends(get_db)):
+    """Counts for screens that combine modules (portal overview, /admin) — DESIGN.md §6 rule 9."""
+    counts = {"up": 0, "down": 0, "pending": 0, "paused": 0}
+    for m in org_query(db, db_models.Monitor, ctx):
+        key = m.status if m.is_active else "paused"
+        counts[key] = counts.get(key, 0) + 1
+    return {"monitors": sum(counts.values()), **counts, "tier": tier(db, ctx.org_id, "uptime")}
+
+
+router.include_router(monitors_router)

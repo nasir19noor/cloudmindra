@@ -7,7 +7,7 @@ Update it in the same change as any decision or structural change. Diagrams: [do
 
 ## Deployment status
 
-Last verified **2026-10-14** against production (`main` at `49d73d9`: PR #1 phase 1, PR #2 team invitations, workspace admin page, PR #3 admin seat limits). Verified from outside with unauthenticated requests: a route that exists answers `401` (sign-in required), a missing route `404`.
+Last verified **2026-10-14** against production (`main` at `db10fc7`: PR #1 phase 1, PR #2 team invitations, workspace admin page, PR #3 admin seat limits, PR #4 phase 2 tiers). Verified from outside with unauthenticated requests: a route that exists answers `401` (sign-in required), a missing route `404`.
 
 | Area | What | Status | Evidence / note |
 |---|---|---|---|
@@ -24,8 +24,9 @@ Last verified **2026-10-14** against production (`main` at `49d73d9`: PR #1 phas
 | SES production access | Alert/invite emails to any address | ⚠️ | Invites to Gmail are not arriving (2026-10-13): domain, DKIM, DMARC and SMTP region are correct, so the account is most likely still in the SES sandbox. Request production access in the SES console (ap-southeast-1) |
 | Admin seat limits | `/admin` Workspaces section: seats used, owners, per-workspace seat limit override | ✅ | `/api/admin/orgs` 401; `/admin` shows "Seat limit" |
 | Invite delivery fallback | Invitation email sent in the request; on failure the inviter gets the link to share | ✅ | Deployed with PR #3 |
-| Phase 2: tiers | Free/Pro per module (`core.org_apps`), monthly usage (`core.usage_counters`, migration `0004`), Uptime tier limits, seats 3→10 with any Pro, 2 free workspaces per user, `/admin` Free/Pro switch, portal plan badges, workspace Plan section | 🚧 | Branch `feat/phase2-tiers`; `/api/orgs/{org}/modules` is 404 on production until deployed |
-| Phase 3+ | `core/` + `apps/` layout, worker container, outbox, AWS connections, other modules | 🔜 | Not built |
+| Phase 2: tiers | Free/Pro per module (`core.org_apps`), monthly usage (`core.usage_counters`, migration `0004`), Uptime tier limits, seats 3→10 with any Pro, 2 free workspaces per user, `/admin` Free/Pro switch, portal plan badges, workspace Plan section | ✅ | `/api/orgs/{org}/modules` 401 |
+| Phase 3: platform | `core/` + `apps/` + `website/` layout, `cloudmindra-worker` container, job queue + schedules, outbox per schema + relay, uptime alerts and workspace cleanup via events, `notify()`, audit log + Activity section, uptime summary API (migration `0005`) | 🚧 | Branch `feat/phase3-platform`; `/api/orgs/{org}/activity` is 404 on production until deployed |
+| Phase 4+ | Alert preferences, portal rework, admin jobs view, AWS connections, other modules | 🔜 | Not built |
 
 ---
 
@@ -90,10 +91,10 @@ CloudMindra sells cloud and AI consulting. The platform adds self-service **modu
 | Container | Command | Responsibility |
 |---|---|---|
 | `cloudmindra-frontend` | Astro node server | Marketing site, `/portal`, `/admin` |
-| `cloudmindra-backend` | `uvicorn main:app` | HTTP API only (after phase 3) |
-| `cloudmindra-worker` 🔜 | `python worker.py` | Job queue consumer + module schedulers (uptime loop, daily cost pulls, scans) |
+| `cloudmindra-backend` | `python migrate.py && uvicorn main:app` | HTTP API only |
+| `cloudmindra-worker` 🚧 | `python migrate.py && python worker.py` | Platform loop every 3 s (outbox relay → jobs, due schedules, due jobs, stuck-job recovery every 60 s) + module loops (uptime checks) |
 
-Until phase 3 the uptime loop runs inside the API process (`MONITOR_WORKER=true`), which requires a **single** uvicorn worker.
+Both containers use the same image and `.env`; `deploy.yml` starts `backend worker` together. `migrate.py` holds an advisory lock, so the two never migrate at once. `WORKER_APPS` (comma-separated, default all) limits which module loops a worker runs. Several workers are safe: jobs are claimed with `SKIP LOCKED`, and the uptime loop elects one leader with a Postgres advisory lock (the others stand by and take over). Phase 1–2 ran the uptime loop inside the API (`MONITOR_WORKER`); that setting is gone.
 
 ---
 
@@ -150,9 +151,9 @@ ROLE_PERMISSIONS = {
 
 ---
 
-## 5. Modules, tiers and limits 🚧 (built on `feat/phase2-tiers`, not yet deployed)
+## 5. Modules, tiers and limits ✅ (deployed with PR #4)
 
-The catalog (modules, tiers, limits, features, permissions) is **code** in `catalog.py` (moves to `core/` in phase 3); per-workspace state is in `core.org_apps`. Only `uptime` is `available`; the other modules are listed in the portal as "coming soon" with their planned limits.
+The catalog (modules, tiers, limits, features, permissions) is **code** in `core/catalog.py`; per-workspace state is in `core.org_apps`. Only `uptime` is `available`; the other modules are listed in the portal as "coming soon" with their planned limits.
 
 | Module | Free | Pro |
 |---|---|---|
@@ -166,7 +167,7 @@ The catalog (modules, tiers, limits, features, permissions) is **code** in `cata
 - **No `org_apps` row = Free** with catalog limits, so new workspaces and new modules need no backfill. A row is created the first time an admin changes the module.
 - **Pro is active** when `tier = 'pro'`, `status` is `active` or `trial`, and `pro_until` is empty or in the future. An expired `pro_until` falls back to Free automatically.
 - **Effective limit** = `org_apps.limits` override (per key, e.g. `{"uptime.monitors": 200}`) → tier default.
-- **`entitlements.py`** is the only place modules ask: `limit()`, `require_below()` (count limits, checked at create time), `consume()` (monthly limits). Modules report live usage through `USAGE_PROVIDERS[app]`, so core never queries module tables.
+- **`core/entitlements.py`** is the only place modules ask: `limit()`, `require_below()` (count limits, checked at create time), `consume()` (monthly limits). Modules report live usage through `USAGE_PROVIDERS[app]`, so core never queries module tables.
 - **Monthly limits** use `core.usage_counters` (period `YYYY-MM`, UTC), incremented by one atomic `INSERT … ON CONFLICT DO UPDATE … WHERE count + n <= limit` in the caller's transaction; concurrent requests cannot overshoot (tested with 12 parallel requests on a limit of 5).
 - Over-limit responses: HTTP **402** with a human message and "Contact CloudMindra to upgrade … to Pro."
 - **Uptime enforcement:** monitor count and allowed intervals checked on create/update; the worker checks a monitor no more often than the tier's minimum (a 1-minute monitor waits 5 minutes after a downgrade); check history is pruned per workspace to 7 / 90 days. Existing monitors above a limit are kept; only new ones are blocked.
@@ -175,22 +176,36 @@ The catalog (modules, tiers, limits, features, permissions) is **code** in `cata
 
 ---
 
-## 6. Backend structure — modular monolith (microservice-ready) 🔜 (schemas ✅ deployed; module DB roles ⚠️ optional; `core/` + `apps/` layout, worker and outbox 🔜)
+## 6. Backend structure — modular monolith (microservice-ready) 🚧 (schemas ✅ deployed; module DB roles ⚠️ optional; `core/` + `apps/` layout, worker, jobs and outbox 🚧 built)
 
 ```
 app/backend/
-  main.py                 API entrypoint (routers only)
-  worker.py               worker entrypoint (WORKER_APPS=uptime,cost,…)
-  core/
-    db.py  auth.py  orgs.py  catalog.py  entitlements.py
-    jobs.py  notify.py  audit.py  reports.py  fx.py
-    cloud/  base.py  registry.py  aws/  fake/
-  apps/
-    uptime/   models.py router.py worker.py
-    review/   cost/   security/   iac/
-  routers/   auth.py admin.py orgs.py members.py invitations.py jobs.py reports.py
-  migrations/            Alembic
+  main.py          API entrypoint: mounts website/, core/routers/ and every apps.MODULES router
+  worker.py        worker entrypoint: platform loop + module loops (WORKER_APPS=uptime,…)
+  migrate.py       migrations + role grants (runs before both)
+  core/            the platform — schema core
+    database.py    engines per schema/role, sessions, BASES
+    models.py      users, organizations, memberships, invitations, org_apps, usage_counters,
+                   jobs, schedules, audit_events, outbox
+    auth.py        Cognito login, session cookie, require_user, require_admin, client_ip
+    orgs.py        org_access(action), org_query, workspace lifecycle, alert_recipients
+    catalog.py     roles/permissions, modules, tiers, limits, features
+    entitlements.py tiers, limits, usage counters, USAGE_PROVIDERS
+    outbox.py      OutboxMixin, emit(), subscribe(), relay()
+    jobs.py        enqueue(), claim (SKIP LOCKED), run_job (retry/backoff), schedules, job_handler()
+    notify.py      notify() → member emails (raises so jobs retry)
+    audit.py       audit(), audit_ctx()
+    mailer.py      SES SMTP
+    routers/       auth, admin, orgs (+activity, jobs), team
+    (later) reports.py, fx.py, cloud/
+  apps/            modules; apps/__init__.py lists MODULES
+    uptime/        schema uptime: models (monitors, checks, outbox), service (checks + loop),
+                   router (/api/orgs/{org}/uptime/…), handlers (events, usage provider)
+    (later) review/ cost/ security/ iac/
+  website/         marketing site — schema site: models, schemas, routers (contact, blog, services, analytics)
+  migrations/      Alembic
 ```
+`website/` is not named `site/` because that would shadow Python's built-in `site` module.
 
 **Boundary rules (what makes later extraction possible):**
 1. Each module owns its tables, in its **own Postgres schema** (`uptime`, `cost`, …). Modules never read another module's tables.
@@ -200,9 +215,9 @@ app/backend/
 5. Workers can run a subset of modules (`WORKER_APPS`), so one module can be scaled or moved alone.
 6. **No foreign keys from a module's tables to another schema.** `org_id`, `created_by` etc. are plain indexed columns; foreign keys are only used inside one schema (e.g. `uptime.checks.monitor_id → uptime.monitors`).
 7. **Access and limits only through `org_access()` / `entitlements`.** Module code never queries `core.memberships` or `core.org_apps` directly, so the same call can later become an API call or a signed token without changing module logic.
-8. **Events are written with a transactional outbox** (§6.1) in the same transaction as the data change, never sent "after commit" by hand.
+8. **Events are written with a transactional outbox** (§6.1) in the same transaction as the data change, never sent "after commit" by hand. 🚧 Uptime alerts work this way: `record_result` writes `uptime.down` / `uptime.recovered` / `uptime.ssl_expiring` to `uptime.outbox`; the `uptime.alert_members` handler emails members.
 9. **Cross-module screens use module summary APIs** (e.g. `GET /api/orgs/{org}/uptime/summary`) for the portal Overview and `/admin`, never SQL joins across schemas.
-10. Workspace deletion is an **event** (`org.deleted`); each module deletes its own rows. No cross-schema `ON DELETE CASCADE`.
+10. Workspace deletion is an **event** (`org.deleted`); each module deletes its own rows. No cross-schema `ON DELETE CASCADE`. 🚧 `delete_workspace` emits `org.deleted` to `core.outbox`; `uptime.delete_workspace_data` removes monitors and checks a few seconds later.
 
 ### 6.1 Database layout for future microservices
 
@@ -241,16 +256,16 @@ Extraction steps for one module: move `apps/<x>` + its schema into a new service
 
 ---
 
-## 7. Shared platform services 🔜
+## 7. Shared platform services 🚧 (jobs, outbox relay, notify, audit built; reports, FX 🔜)
 
 | Service | Purpose | Key points |
 |---|---|---|
-| **Jobs** (`jobs`, `schedules`) | Background work for any module | Claimed with `SELECT … FOR UPDATE SKIP LOCKED`; retries with backoff; timeouts; status polled by the portal. Uptime keeps its own high-frequency loop inside the worker. |
-| **Notifications** (`notify()`, `notification_prefs`) | Email alerts per event (`uptime.down`, `uptime.recovered`, `uptime.ssl`, `cost.anomaly`, `security.critical`, `review.done`) | Recipients = members with that event enabled. Sender `CloudMindra Monitoring <no-reply@cloudmindra.com>` (`ALERT_FROM_ADDRESS`). Slack/webhooks later as channels. |
-| **Audit** (`audit()`, `audit_events`) | Who did what | Shown in workspace Settings → Activity and in `/admin`. |
+| **Jobs** (`jobs`, `schedules`) 🚧 | Background work for any module | `enqueue()` in the caller's transaction (optional `dedupe_key`); claimed with `SELECT … FOR UPDATE SKIP LOCKED`; retries with backoff 30 s × 2ⁿ (max 1 h), `failed` after `max_attempts` (5); `running` jobs older than 15 min are re-queued; schedules enqueue a job every `interval_seconds`. Status: `GET /api/orgs/{org}/jobs/{id}`. Uptime keeps its own high-frequency loop in the worker. |
+| **Notifications** (`notify()`) 🚧, `notification_prefs` 🔜 | Email alerts per event (`uptime.down`, `uptime.recovered`, `uptime.ssl_expiring`; later `cost.anomaly`, `security.critical`, `review.done`) | Runs inside an event job, so a failed send (raises `DeliveryFailed`) is retried. Recipients = every member until per-event preferences arrive (phase 4). Sender `CloudMindra Monitoring <no-reply@cloudmindra.com>` (`ALERT_FROM_ADDRESS`). Slack/webhooks later as channels. |
+| **Audit** (`audit()`, `audit_events`) 🚧 | Who did what | Recorded with actor, details and IP for: workspace created/updated/deleted, member invited/joined/role changed/removed/left, invitation cancelled, monitor created/updated/deleted, module tier changed, seat limit changed, platform admin granted/revoked. Owners/admins: `GET /api/orgs/{org}/activity` (action `audit.view`, which viewers' `*.read` does not cover) and the Activity section of `/portal/workspace`; platform admins: `GET /api/admin/activity`. |
 | **Reports** (`reports`) | PDF/ZIP/JSON outputs | Private S3 bucket under `org/{org_id}/…`; download via 5-minute signed URL after access check; retention 90 days on Free. |
 | **FX** (`fx_rates`) | Currency conversion | Daily ECB reference rates (includes IDR). |
-| **Outbox relay** (`<schema>.outbox`) | Reliable events between modules | Runs in the worker; publishes each schema's unpublished events in order, retries, marks `published_at`; consumers dedupe by event id. Events: `org.created`, `org.deleted`, `member.removed`, `module.tier_changed`, `uptime.down`, … |
+| **Outbox relay** (`<schema>.outbox`) 🚧 | Reliable events between modules | Runs in the worker; for each unpublished event (oldest first, `SKIP LOCKED`) enqueues one `event` job per subscriber with dedupe key `<event id>:<handler>`, commits the jobs, **then** marks `published_at` — a crash in between re-relays and the duplicates are dropped, never lost. Handlers register with `@subscribe(...)` and must be idempotent. Events today: `org.deleted` (core), `uptime.down`, `uptime.recovered`, `uptime.ssl_expiring` (uptime). |
 
 ---
 
@@ -293,17 +308,17 @@ Only `aws` (and `fake` for tests) is implemented. Modules declare supported prov
 | `core.organizations` | `id`, `name`, `created_by`, `currency`, `member_limit` (override) | ✅ |
 | `core.memberships` | `org_id`, `user_id`, `role` — UNIQUE(org_id,user_id) | ✅ |
 | `core.invitations` | `org_id`, `email`, `role`, `token_hash`, `invited_by`, `expires_at`, `accepted_at` | ✅ |
-| `core.org_apps` | PK(`org_id`,`app_key`), `tier` free/pro, `status` active/trial/past_due/cancelled, `limits` jsonb, `pro_since`, `pro_until`, `updated_by` — no row = Free | 🚧 |
-| `core.usage_counters` | PK(`org_id`,`metric`,`period` `YYYY-MM`), `count` | 🚧 |
-| `core.jobs` | `org_id`, `app_key`, `type`, `payload`, `status`, `run_at`, `attempts`, `locked_by`, `result`, `error` | 🔜 |
-| `core.schedules` | `org_id`, `app_key`, `type`, `payload`, `interval`, `next_run_at`, `enabled` | 🔜 |
+| `core.org_apps` | PK(`org_id`,`app_key`), `tier` free/pro, `status` active/trial/past_due/cancelled, `limits` jsonb, `pro_since`, `pro_until`, `updated_by` — no row = Free | ✅ |
+| `core.usage_counters` | PK(`org_id`,`metric`,`period` `YYYY-MM`), `count` | ✅ |
+| `core.jobs` | `org_id`, `app_key`, `type`, `payload`, `status` queued/running/succeeded/failed/cancelled, `dedupe_key` (unique), `run_at`, `attempts`, `max_attempts`, `locked_by/at`, `result`, `error`, `finished_at`; index `(status, run_at)` | 🚧 |
+| `core.schedules` | `org_id`, `app_key`, `type`, `payload`, `interval_seconds`, `next_run_at`, `last_run_at`, `enabled` | 🚧 |
 | `core.notification_prefs` | PK(`membership_id`,`event_key`), `email` | 🔜 |
-| `core.audit_events` | `org_id`, `actor_user_id`, `app_key`, `action`, `target_id`, `metadata`, `ip` | 🔜 |
+| `core.audit_events` | `org_id`, `actor_user_id`, `actor_email`, `app_key`, `action`, `target_id`, `details` (the DESIGN's "metadata"; a reserved name in SQLAlchemy), `ip` | 🚧 |
 | `core.reports` | `org_id`, `app_key`, `kind`, `title`, `s3_key`, `size_bytes`, `job_id` | 🔜 |
 | `core.fx_rates` | PK(`date`,`base`,`quote`), `rate` | 🔜 |
 | `core.cloud_connections` | `org_id`, `provider`, `scope_type`, `scope_id`, `auth_method`, `config` (role_arn, external_id), `capabilities`, `status` | 🔜 |
 | `core.cloud_scopes` | `connection_id`, `scope_type`, `scope_id`, `name`, `included` | 🔜 |
-| `<schema>.outbox` (every schema) | `id` uuid, `event_type`, `org_id`, `payload` jsonb, `created_at`, `published_at` | 🔜 |
+| `<schema>.outbox` (`core.outbox`, `uptime.outbox` 🚧; one per future schema) | `id` uuid, `event_type`, `org_id`, `payload` jsonb, `created_at`, `published_at` | 🚧 |
 | `uptime.monitors` | `org_id` + `created_by` (plain columns, no cross-schema FK), url, interval, status, SSL fields | ✅ |
 | `uptime.checks` | `monitor_id` (FK inside schema), `checked_at`, `ok`, `status_code`, `response_ms`, `error` (30-day retention) | ✅ |
 | `cost.records` | FOCUS columns, see §8.3; partitioned by month | 🔜 |
@@ -314,9 +329,10 @@ Only `aws` (and `fake` for tests) is implemented. Modules declare supported prov
 - `0001` baseline = current schema (`alembic stamp` on prod).
 - `0002` create schemas `core`, `uptime`, `site` and roles; `ALTER TABLE … SET SCHEMA` for existing tables; drop the `monitors.user_id → users` FK; grant each role its schema.
 - `0003` workspaces: organizations + memberships + invitations, backfill personal workspaces, `uptime.monitors.org_id`.
-- `0004` 🚧 `core.org_apps` + `core.usage_counters` (no backfill: no row = Free).
-- `0005` platform tables for phase 3 (jobs, schedules, notification prefs, audit) + outbox per schema.
-- `0006` cloud tables when the first AWS module lands.
+- `0004` ✅ `core.org_apps` + `core.usage_counters` (no backfill: no row = Free).
+- `0005` 🚧 `core.jobs`, `core.schedules`, `core.audit_events`, `core.outbox`, `uptime.outbox`.
+- `0006` `core.notification_prefs` (phase 4).
+- `0007` cloud tables when the first AWS module lands.
 
 The container runs `migrate.py` (see §2.1) before start; take a `pg_dump` before each migration deploy. ✅ `0001`–`0003` are deployed; `create_all` is no longer used. Models use the index naming convention `ix_<table>_<column>` (no schema prefix) so autogenerate matches the migrations.
 
@@ -331,7 +347,7 @@ The container runs `migrate.py` (see §2.1) before start; take a `pg_dump` befor
 | Uptime ✅ | `GET/POST /api/orgs/{org}/uptime/monitors`, `PATCH/DELETE …/monitors/{id}`, `POST …/{id}/check`, `GET …/{id}/checks` (read: `uptime.read`, write: `uptime.write`) |
 | Workspaces ✅ | `GET/POST /api/orgs`, `GET/PATCH/DELETE /api/orgs/{org}` (name, currency), `POST /api/orgs/{org}/select` (remember last workspace) · 🚧 `GET /api/orgs/{org}/modules` (tier, limits, usage, features per module; also included in `GET /api/orgs/{org}`); uptime list adds `tier`, `locked_intervals`, `history_days` |
 | Team ✅ | `GET /api/orgs/{org}/members` (`members.read`) · `PATCH/DELETE /api/orgs/{org}/members/{user}` (`members.manage`; owner role needs `org.transfer`; DELETE on yourself = leave) · `GET/POST /api/orgs/{org}/invitations`, `DELETE …/invitations/{id}` (`members.manage`) · `GET /api/invitations/preview?token=` (no sign-in) · `POST /api/invitations/accept` |
-| Platform 🔜 | `/api/orgs/{org}/jobs/{id}`, `/reports[/{id}/download]`, `/connections[/{id}]`, `/activity` |
+| Platform | 🚧 `GET /api/orgs/{org}/jobs/{id}` (`org.read`), `GET /api/orgs/{org}/activity` (`audit.view`: owners/admins), `GET /api/admin/activity` (`?org_id=`), `GET /api/orgs/{org}/uptime/summary` (counts by status) · 🔜 `/reports[/{id}/download]`, `/connections[/{id}]` |
 | Modules 🔜 | `/api/orgs/{org}/{app_key}/…` |
 
 Errors: 401 not signed in · 403 role/module · 404 not found or not a member · 402 over limit · 422 validation · 429 rate limited.
@@ -347,7 +363,7 @@ Errors: 401 not signed in · 403 role/module · 404 not found or not a member ·
 | `/portal/[org]` | Overview tiles per enabled module (status, usage) | 🔜 |
 | `/portal/[org]/{uptime,review,cost,security,iac}` | Module pages | 🔜 |
 | `/portal/[org]/connections` | AWS accounts | 🔜 |
-| `/portal/workspace?org=` | Workspace admin for owners and admins: name & currency, team (members, roles, invitations, seats), leave, delete (owner, type-to-confirm). Members/viewers see a "not allowed" notice and can leave from `/portal` ✅; Plan section (each module's tier, limits, usage, features) 🚧 | ✅ |
+| `/portal/workspace?org=` | Workspace admin for owners and admins: name & currency, team (members, roles, invitations, seats), leave, delete (owner, type-to-confirm). Members/viewers see a "not allowed" notice and can leave from `/portal` ✅; Plan section (each module's tier, limits, usage, features) ✅; Activity section (last 50 audit entries in plain language) 🚧 | ✅ |
 | `/portal/[org]/reports` · `/settings` | Files · tiers & usage, activity, alert preferences (later merged with `/portal/workspace`) | 🔜 |
 | `/portal/invite` | Accept invitation (preview before sign-in, token kept in sessionStorage) | ✅ |
 
@@ -372,8 +388,8 @@ The sidebar is built from `GET /api/orgs/{org}` (`role`, modules with tier/limit
 |---|---|---|
 | 0 | Cognito + Google login, portal, admin via `is_admin`/`ADMIN_EMAIL`, uptime monitor | ✅ |
 | 1 | Alembic, Postgres schemas + roles per module (move existing tables, drop cross-schema FKs), workspaces, memberships, backfill, `org_access`; uptime API scoped to workspaces; portal workspace switcher | ✅ (module DB roles ⚠️ optional, not yet set up) |
-| 2 | Catalog, Free/Pro per module, `org_apps`, limits & usage, isolation test (every `/api/orgs/{org_id}/…` route returns 404 to non-members, enumerated from OpenAPI) | 🚧 |
-| 3 | `core/` + `apps/` layout, engine per module role, worker container, job queue, outbox per schema + relay, uptime moved, notify, audit, module summary APIs | 🔜 |
+| 2 | Catalog, Free/Pro per module, `org_apps`, limits & usage, isolation test (every `/api/orgs/{org_id}/…` route returns 404 to non-members, enumerated from OpenAPI) | ✅ |
+| 3 | `core/` + `apps/` layout, engine per module role, worker container, job queue, outbox per schema + relay, uptime moved, notify, audit, module summary APIs | 🚧 |
 | 4 | Team: invitations, roles, member caps, `/portal/invite`, `/portal/workspace` (✅ deployed early); alert preferences (🔜) | ✅ / 🔜 |
 | 5 | Portal: workspace switcher, module sidebar, Team, Settings | 🔜 |
 | 6 | Admin: workspaces, set Pro per module, overrides, jobs | 🔜 |
@@ -397,6 +413,9 @@ The sidebar is built from `GET /api/orgs/{org}` (`role`, modules with tier/limit
 | 2026-10-13 | User-selectable display currency; store original, convert with daily ECB rates. |
 | 2026-10-13 | Team rules: any user creates workspaces (max 2 free-only), member cap 3/10, exact-email invites, alerts default on for all roles. |
 | 2026-10-13 | Deployed: phase 1 (PR #1), team invitations (PR #2), workspace admin page (`d8db972`). |
+| 2026-10-14 | Deployed: PR #4 phase 2 tiers. |
+| 2026-10-14 | Phase 3 layout: `core/` (platform), `apps/<module>/` (one package per module, registered in `apps.MODULES`), `website/` (marketing; not `site/`, which shadows a Python module). |
+| 2026-10-14 | Alerts and workspace cleanup go through the outbox + job queue (at-least-once, deduplicated per event and handler); the uptime loop moves to the worker and elects one leader with an advisory lock. |
 | 2026-10-14 | Tiers: no `org_apps` row means Free (no backfill); Pro set by hand per module in `/admin`; expired `pro_until` falls back to Free. |
 | 2026-10-14 | Free Uptime keeps 7 days of check history (was 30 before tiers); Pro keeps 90. Monitors above a limit after a downgrade are kept, new ones blocked. |
 | 2026-10-14 | Deployed: PR #3 admin seat limits and invite-link fallback. |

@@ -83,6 +83,13 @@ const CURRENCIES = ['USD', 'IDR', 'SGD', 'MYR', 'EUR', 'GBP', 'AUD', 'JPY'];
           </div>
         </section>
 
+        <!-- Activity -->
+        <section class="card mt-4 p-6">
+          <p class="eyebrow">Activity</p>
+          <p class="mt-2 text-caption text-fg/55">Who changed what in this workspace, newest first. Visible to owners and admins.</p>
+          <ul id="activity-list" class="mt-5 divide-y divide-fg/[0.06] rounded-2xl ring-1 ring-fg/[0.08]"></ul>
+        </section>
+
         <!-- Danger zone -->
         <section class="card mt-4 p-6 ring-red-200">
           <p class="eyebrow text-red-700">Danger zone</p>
@@ -313,6 +320,48 @@ const CURRENCIES = ['USD', 'IDR', 'SGD', 'MYR', 'EUR', 'GBP', 'AUD', 'JPY'];
   });
 
   // --- Start ------------------------------------------------------------------------
+  // --- Activity ---------------------------------------------------------------------
+  type AuditEvent = { id: number; action: string; actor: string | null; details: Record<string, any>; created_at: string };
+
+  // Human-readable line for each audit action; values are escaped by the caller
+  function describe(e: AuditEvent): string {
+    const d = e.details ?? {};
+    const pair = (k: string) => (Array.isArray(d[k]) ? `${d[k][0] ?? '–'} → ${d[k][1] ?? '–'}` : '');
+    switch (e.action) {
+      case 'org.created': return `created the workspace "${d.name}"`;
+      case 'org.updated': return `changed ${Object.keys(d).map((k) => `${k} (${pair(k)})`).join(', ')}`;
+      case 'org.seat_limit_changed': return `set the seat limit to ${d.to ?? 'the default'}`;
+      case 'module.tier_changed': return `changed a module from ${d.from} to ${d.to}`;
+      case 'member.invited': return `${d.resent ? 're-sent an invitation to' : 'invited'} ${d.email} as ${ROLE_LABEL[d.role] ?? d.role}`;
+      case 'invitation.cancelled': return `cancelled the invitation for ${d.email}`;
+      case 'member.joined': return `joined as ${ROLE_LABEL[d.role] ?? d.role}`;
+      case 'member.role_changed': return `changed a member's role from ${ROLE_LABEL[d.from] ?? d.from} to ${ROLE_LABEL[d.to] ?? d.to}`;
+      case 'member.removed': return `removed ${d.email}`;
+      case 'member.left': return 'left the workspace';
+      case 'uptime.monitor.created': return `added the monitor "${d.name}" (${d.url})`;
+      case 'uptime.monitor.updated': return `updated a monitor: ${Object.keys(d).map((k) => `${k} ${pair(k)}`).join(', ')}`;
+      case 'uptime.monitor.deleted': return `deleted the monitor "${d.name}"`;
+      default: return e.action;
+    }
+  }
+
+  async function loadActivity() {
+    const res = await api(`${base()}/activity?limit=50`).catch(() => null);
+    if (!res?.ok) return;
+    const events: AuditEvent[] = await res.json();
+    $('activity-list').innerHTML = events.length
+      ? events
+          .map(
+            (e) => `
+          <li class="flex flex-wrap items-baseline justify-between gap-3 px-4 py-3">
+            <p class="min-w-0 text-body"><b class="font-medium">${esc(e.actor ?? 'CloudMindra')}</b> ${esc(describe(e))}</p>
+            <p class="shrink-0 text-caption text-fg/55">${esc(new Date(e.created_at).toLocaleString())}</p>
+          </li>`,
+          )
+          .join('')
+      : '<li class="px-4 py-6 text-center text-caption text-fg/50">No activity yet</li>';
+  }
+
   // --- Plan -----------------------------------------------------------------------
   type Module = {
     key: string; name: string; available: boolean; tier: 'free' | 'pro'; pro_until: string | null;
@@ -373,7 +422,7 @@ const CURRENCIES = ['USD', 'IDR', 'SGD', 'MYR', 'EUR', 'GBP', 'AUD', 'JPY'];
     }
     renderHeader();
     view('admin');
-    await Promise.all([loadTeam(), loadPlan()]);
+    await Promise.all([loadTeam(), loadPlan(), loadActivity()]);
   }
 
   init();
