@@ -1,0 +1,67 @@
+---
+import PortalLayout from '../../../layouts/PortalLayout.astro';
+
+const { org } = Astro.params;
+---
+
+<PortalLayout title="Email alerts" org={org!} section="alerts">
+  <section class="card p-6">
+    <p class="eyebrow">Email alerts</p>
+    <p class="mt-2 text-caption text-fg/55">
+      Choose which alerts you receive for <b id="alerts-ws"></b>. This only changes your own emails; other members keep theirs.
+    </p>
+    <ul id="alert-list" class="mt-5 divide-y divide-fg/[0.06] rounded-2xl ring-1 ring-fg/[0.08]"></ul>
+    <p id="alert-msg" class="mt-3 hidden text-caption" role="status"></p>
+  </section>
+</PortalLayout>
+
+<script>
+  import { $, esc, errorText, showMsg } from '../../../lib/portal';
+  import { bootPortal } from '../../../lib/shell';
+
+  type AlertPref = { event_key: string; app_name: string; label: string; email: boolean };
+
+  const ctx = await bootPortal();
+  $('alerts-ws').textContent = ctx.workspace.name;
+
+  function render(prefs: AlertPref[]) {
+    $('alert-list').innerHTML = prefs.length
+      ? prefs
+          .map(
+            (p) => `
+        <li class="flex items-center justify-between gap-4 px-4 py-3">
+          <div class="min-w-0">
+            <p class="text-body">${esc(p.label)}</p>
+            <p class="text-caption text-fg/55">${esc(p.app_name)}</p>
+          </div>
+          <button data-alert="${esc(p.event_key)}" data-on="${p.email}" role="switch" aria-checked="${p.email}"
+            aria-label="${esc(p.label)}"
+            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${p.email ? 'bg-brand' : 'bg-fg/15'}">
+            <span class="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${p.email ? 'translate-x-[22px]' : 'translate-x-[2px]'}"></span>
+          </button>
+        </li>`,
+          )
+          .join('')
+      : '<li class="px-4 py-6 text-center text-caption text-fg/50">No alerts available yet</li>';
+  }
+
+  $('alert-list').addEventListener('click', async (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-alert]');
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    showMsg('alert-msg', null);
+    const on = btn.dataset.on !== 'true';
+    const res = await ctx
+      .api(ctx.orgApi('/notifications'), { method: 'PUT', body: JSON.stringify({ events: { [btn.dataset.alert!]: on } }) })
+      .catch(() => null);
+    if (!res?.ok) {
+      btn.disabled = false;
+      return showMsg('alert-msg', await errorText(res, 'Could not save your alert settings'));
+    }
+    render(await res.json());
+    showMsg('alert-msg', on ? 'You will receive this alert.' : 'You will no longer receive this alert.', true);
+  });
+
+  const res = await ctx.api(ctx.orgApi('/notifications')).catch(() => null);
+  if (res?.ok) render(await res.json());
+</script>
