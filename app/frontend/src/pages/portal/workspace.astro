@@ -63,7 +63,7 @@ const CURRENCIES = ['USD', 'IDR', 'SGD', 'MYR', 'EUR', 'GBP', 'AUD', 'JPY'];
               </button>
             </div>
           </form>
-          <p id="team-msg" class="mt-3 hidden text-caption" role="status"></p>
+          <p id="team-msg" class="mt-3 hidden break-all text-caption" role="status"></p>
 
           <ul id="member-list" class="mt-6 divide-y divide-fg/[0.06] rounded-2xl ring-1 ring-fg/[0.08]"></ul>
 
@@ -207,6 +207,22 @@ const CURRENCIES = ['USD', 'IDR', 'SGD', 'MYR', 'EUR', 'GBP', 'AUD', 'JPY'];
     renderTeam();
   }
 
+  // When the email could not be delivered (e.g. SES sandbox), hand the inviter the link instead
+  async function reportInvite(email: string, data: { email_sent?: boolean; invite_link?: string }, okText: string) {
+    if (data.email_sent !== false || !data.invite_link) return msg('team-msg', okText, true);
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(data.invite_link);
+      copied = true;
+    } catch {
+      /* clipboard can be blocked; the link is shown below either way */
+    }
+    msg(
+      'team-msg',
+      `We couldn't email ${email}. ${copied ? 'The invitation link is copied to your clipboard — ' : ''}share this link with them: ${data.invite_link}`,
+    );
+  }
+
   const sendInvite = (email: string, role: string) =>
     api(`${base()}/invitations`, { method: 'POST', body: JSON.stringify({ email, role }) }).catch(() => null);
 
@@ -222,7 +238,7 @@ const CURRENCIES = ['USD', 'IDR', 'SGD', 'MYR', 'EUR', 'GBP', 'AUD', 'JPY'];
     btn.disabled = false;
     if (!res?.ok) return msg('team-msg', await errorText(res, 'Could not send the invitation'));
     (form.elements.namedItem('email') as HTMLInputElement).value = '';
-    msg('team-msg', `Invitation sent to ${email}.`, true);
+    await reportInvite(email, await res.json(), `Invitation sent to ${email}.`);
     await loadTeam();
   });
 
@@ -258,7 +274,7 @@ const CURRENCIES = ['USD', 'IDR', 'SGD', 'MYR', 'EUR', 'GBP', 'AUD', 'JPY'];
     if (resend) {
       const res = await sendInvite(inv.email, inv.role);
       if (!res?.ok) return msg('team-msg', await errorText(res, 'Could not resend the invitation'));
-      msg('team-msg', `A new invitation link was sent to ${inv.email}.`, true);
+      await reportInvite(inv.email, await res.json(), `A new invitation link was sent to ${inv.email}.`);
     } else {
       const res = await api(`${base()}/invitations/${encodeURIComponent(inv.id)}`, { method: 'DELETE' }).catch(() => null);
       if (!res?.ok) return msg('team-msg', await errorText(res, 'Could not cancel the invitation'));

@@ -3,7 +3,28 @@
 This is the source of truth for how the CloudMindra customer platform is built and where it is going.
 Update it in the same change as any decision or structural change. Diagrams: [docs/architecture.drawio](docs/architecture.drawio).
 
-**Status legend:** ✅ built and deployed · 🚧 built, not yet deployed · 🔜 planned
+**Status legend:** ✅ deployed to production · 🚧 built, not yet deployed · ⚠️ deployed but needs a manual step / not verified · 🔜 planned
+
+## Deployment status
+
+Last verified **2026-10-13** against production (`main` at `d8db972`: PR #1 phase 1, PR #2 team invitations, workspace admin page). Verified from outside with unauthenticated requests: a route that exists answers `401` (sign-in required), a missing route `404`.
+
+| Area | What | Status | Evidence / note |
+|---|---|---|---|
+| Website | Marketing site, contact form, analytics | ✅ | `cloudmindra.com` 200 |
+| Login | Cognito managed login, Google federation, `cm_session` cookie | ✅ | `/api/auth/me` 401 |
+| Platform admin | `/admin` with Google sign-in, users + `is_admin` toggle, `ADMIN_EMAIL` seed | ✅ | `/admin` 200, `/api/admin/me` 401 |
+| Database | Alembic `0001`–`0003`, schemas `core` / `uptime` / `site`, personal workspaces backfilled | ✅ | Workspace routes answer; confirm once with `SELECT version_num FROM alembic_version` (expect `0003`) |
+| Database roles | `core_svc` / `uptime_svc` / `site_svc` + `DATABASE_URL_CORE/UPTIME/SITE` | ⚠️ | Optional; needs `db/roles.sql` run by a DB superuser. Not verified — until done, all schemas use `DATABASE_URL` |
+| Workspaces | `/api/orgs…`, `org_access`, roles owner/admin/member/viewer, workspace switcher | ✅ | `/api/orgs` 401 |
+| Uptime Monitor | Workspace-scoped `/api/orgs/{org}/uptime/monitors`, alerts to all members from `no-reply@` | ✅ | New route 401, old `/api/monitors` 404 |
+| Team | Members, roles, invitations by email, seats (3), leave | ✅ | `/api/orgs/{org}/members` 401, `/api/invitations/preview` answers |
+| Invite page | `/portal/invite` | ✅ | 200 (one transient 502 seen while probing) |
+| Workspace admin | `/portal/workspace` for owners/admins | ✅ | 200; portal shows "Manage workspace" |
+| SES production access | Alert/invite emails to any address | ⚠️ | Invites to Gmail are not arriving (2026-10-13): domain, DKIM, DMARC and SMTP region are correct, so the account is most likely still in the SES sandbox. Request production access in the SES console (ap-southeast-1) |
+| Admin seat limits | `/admin` Workspaces section: seats used, owners, per-workspace seat limit override | 🚧 | Branch `feat/admin-seats` |
+| Invite delivery fallback | Invitation email sent in the request; on failure the inviter gets the link to share | 🚧 | Branch `feat/admin-seats` |
+| Phase 2+ | Tiers, worker container, outbox, AWS connections, other modules | 🔜 | Not built |
 
 ---
 
@@ -13,7 +34,7 @@ CloudMindra sells cloud and AI consulting. The platform adds self-service **modu
 
 | Module (`app_key`) | What it does | Status |
 |---|---|---|
-| `uptime` | Monitors URLs, emails on down / recovery / SSL expiry | 🚧 (per-user today; moves to workspaces in phase 2–3) |
+| `uptime` | Monitors URLs, emails on down / recovery / SSL expiry | ✅ (workspace-scoped; moves into `apps/uptime` + worker in phase 3) |
 | `review` | AI Architecture Review of uploaded Terraform/CloudFormation/diagrams | 🔜 |
 | `cost` | AWS Cost Analyzer — spend trends, idle resources, savings | 🔜 |
 | `security` | Cloud Security Scan — misconfigurations mapped to CIS/SOC2/ISO | 🔜 |
@@ -85,7 +106,7 @@ Until phase 3 the uptime loop runs inside the API process (`MONITOR_WORKER=true`
 
 ---
 
-## 4. Multi-tenancy 🚧 (workspaces, roles, `org_access`, invitations and team management built; alert preferences in phase 4)
+## 4. Multi-tenancy ✅ (workspaces, roles, `org_access`, invitations and team management deployed; alert preferences 🔜 phase 4)
 
 **Model:** shared database and tables; every tenant-owned row has `org_id`. UI term: **Workspace** (code: `organization`).
 
@@ -148,7 +169,7 @@ The catalog (modules, tiers, limits, permissions, notification events) is **code
 
 ---
 
-## 6. Backend structure — modular monolith (microservice-ready) 🔜
+## 6. Backend structure — modular monolith (microservice-ready) 🔜 (schemas ✅ deployed; module DB roles ⚠️ optional; `core/` + `apps/` layout, worker and outbox 🔜)
 
 ```
 app/backend/
@@ -262,10 +283,10 @@ Only `aws` (and `fake` for tests) is implemented. Modules declare supported prov
 
 | Schema.table | Key columns | Status |
 |---|---|---|
-| `core.users` | `id` (Cognito sub), `email`, `name`, `provider`, `is_admin`, `created_at`, `last_login_at`, 🔜 `last_org_id`, 🔜 `currency` | ✅ |
-| `core.organizations` | `id`, `name`, `created_by`, `currency`, `member_limit` (override) | 🔜 |
-| `core.memberships` | `org_id`, `user_id`, `role` — UNIQUE(org_id,user_id) | 🔜 |
-| `core.invitations` | `org_id`, `email`, `role`, `token_hash`, `invited_by`, `expires_at`, `accepted_at` | 🔜 |
+| `core.users` | `id` (Cognito sub), `email`, `name`, `provider`, `is_admin`, `last_org_id`, `created_at`, `last_login_at`, 🔜 `currency` | ✅ |
+| `core.organizations` | `id`, `name`, `created_by`, `currency`, `member_limit` (override) | ✅ |
+| `core.memberships` | `org_id`, `user_id`, `role` — UNIQUE(org_id,user_id) | ✅ |
+| `core.invitations` | `org_id`, `email`, `role`, `token_hash`, `invited_by`, `expires_at`, `accepted_at` | ✅ |
 | `core.org_apps` | PK(`org_id`,`app_key`), `tier` free/pro, `status`, `limits` jsonb, `pro_since`, `pro_until` | 🔜 |
 | `core.usage_counters` | PK(`org_id`,`metric`,`period`), `count` | 🔜 |
 | `core.jobs` | `org_id`, `app_key`, `type`, `payload`, `status`, `run_at`, `attempts`, `locked_by`, `result`, `error` | 🔜 |
@@ -277,11 +298,11 @@ Only `aws` (and `fake` for tests) is implemented. Modules declare supported prov
 | `core.cloud_connections` | `org_id`, `provider`, `scope_type`, `scope_id`, `auth_method`, `config` (role_arn, external_id), `capabilities`, `status` | 🔜 |
 | `core.cloud_scopes` | `connection_id`, `scope_type`, `scope_id`, `name`, `included` | 🔜 |
 | `<schema>.outbox` (every schema) | `id` uuid, `event_type`, `org_id`, `payload` jsonb, `created_at`, `published_at` | 🔜 |
-| `public.monitors` → `uptime.monitors` | today `user_id` (FK to users); becomes `org_id` + `created_by`, no cross-schema FK | ✅ (per user) |
-| `public.monitor_checks` → `uptime.checks` | `monitor_id` (FK inside schema), `checked_at`, `ok`, `status_code`, `response_ms`, `error` (30-day retention) | ✅ |
+| `uptime.monitors` | `org_id` + `created_by` (plain columns, no cross-schema FK), url, interval, status, SSL fields | ✅ |
+| `uptime.checks` | `monitor_id` (FK inside schema), `checked_at`, `ok`, `status_code`, `response_ms`, `error` (30-day retention) | ✅ |
 | `cost.records` | FOCUS columns, see §8.3; partitioned by month | 🔜 |
 | `security.findings`, `security.resources` | see §8.3 | 🔜 |
-| `public.*` marketing → `site.*` | `contact_submissions`, `blog_posts`, `services`, `page_visits` | ✅ |
+| `site.*` (marketing) | `contact_submissions`, `blog_posts`, `services`, `page_visits` | ✅ |
 
 **Migrations:** Alembic (phase 1), one history for now with one branch label per schema so a module's migrations can later move with it into its own service.
 - `0001` baseline = current schema (`alembic stamp` on prod).
@@ -290,7 +311,7 @@ Only `aws` (and `fake` for tests) is implemented. Modules declare supported prov
 - `0004` platform tables + outbox per schema; every workspace gets every module on `free`.
 - `0005` cloud tables when the first AWS module lands.
 
-The container runs `migrate.py` (see §2.1) before start; take a `pg_dump` before each migration deploy. 🚧 `0001`–`0003` are built; `create_all` is no longer used. Models use the index naming convention `ix_<table>_<column>` (no schema prefix) so autogenerate matches the migrations.
+The container runs `migrate.py` (see §2.1) before start; take a `pg_dump` before each migration deploy. ✅ `0001`–`0003` are deployed; `create_all` is no longer used. Models use the index naming convention `ix_<table>_<column>` (no schema prefix) so autogenerate matches the migrations.
 
 ---
 
@@ -299,10 +320,10 @@ The container runs `migrate.py` (see §2.1) before start; take a `pg_dump` befor
 | Area | Routes |
 |---|---|
 | Auth ✅ | `GET /api/auth/login`, `/callback`, `/logout`, `/me` |
-| Platform admin ✅ | `/api/admin/me`, `/analytics`, `/users`, `PUT /users/{id}` (is_admin), `POST /logout` |
-| Uptime 🚧 | `GET/POST /api/orgs/{org}/uptime/monitors`, `PATCH/DELETE …/monitors/{id}`, `POST …/{id}/check`, `GET …/{id}/checks` (read: `uptime.read`, write: `uptime.write`) |
-| Workspaces 🚧 | `GET/POST /api/orgs`, `GET/PATCH/DELETE /api/orgs/{org}` (name, currency), `POST /api/orgs/{org}/select` (remember last workspace) |
-| Team 🚧 | `GET /api/orgs/{org}/members` (`members.read`) · `PATCH/DELETE /api/orgs/{org}/members/{user}` (`members.manage`; owner role needs `org.transfer`; DELETE on yourself = leave) · `GET/POST /api/orgs/{org}/invitations`, `DELETE …/invitations/{id}` (`members.manage`) · `GET /api/invitations/preview?token=` (no sign-in) · `POST /api/invitations/accept` |
+| Platform admin ✅ | `/api/admin/me`, `/analytics`, `/users`, `PUT /users/{id}` (is_admin), `POST /logout` · 🚧 `GET /orgs` (seats used, owners, limits), `PUT /orgs/{id}` (`member_limit` 1–1000, `null` = default) |
+| Uptime ✅ | `GET/POST /api/orgs/{org}/uptime/monitors`, `PATCH/DELETE …/monitors/{id}`, `POST …/{id}/check`, `GET …/{id}/checks` (read: `uptime.read`, write: `uptime.write`) |
+| Workspaces ✅ | `GET/POST /api/orgs`, `GET/PATCH/DELETE /api/orgs/{org}` (name, currency), `POST /api/orgs/{org}/select` (remember last workspace) |
+| Team ✅ | `GET /api/orgs/{org}/members` (`members.read`) · `PATCH/DELETE /api/orgs/{org}/members/{user}` (`members.manage`; owner role needs `org.transfer`; DELETE on yourself = leave) · `GET/POST /api/orgs/{org}/invitations`, `DELETE …/invitations/{id}` (`members.manage`) · `GET /api/invitations/preview?token=` (no sign-in) · `POST /api/invitations/accept` |
 | Platform 🔜 | `/api/orgs/{org}/jobs/{id}`, `/reports[/{id}/download]`, `/connections[/{id}]`, `/activity` |
 | Modules 🔜 | `/api/orgs/{org}/{app_key}/…` |
 
@@ -314,14 +335,14 @@ Errors: 401 not signed in · 403 role/module · 404 not found or not a member ·
 
 | Route | Purpose | Status |
 |---|---|---|
-| `/portal` | Sign-in; today the uptime dashboard; later redirects to the last workspace | ✅ |
-| `/admin` | Platform admin: analytics, users + admin toggle, contacts; later workspaces, tiers, jobs | ✅ |
+| `/portal` | Sign-in, workspace switcher (Manage workspace / Leave), uptime dashboard | ✅ |
+| `/admin` | Platform admin: analytics, users + admin toggle, contacts ✅; Workspaces with seat-limit override 🚧; later tiers, jobs 🔜 | ✅ |
 | `/portal/[org]` | Overview tiles per enabled module (status, usage) | 🔜 |
 | `/portal/[org]/{uptime,review,cost,security,iac}` | Module pages | 🔜 |
 | `/portal/[org]/connections` | AWS accounts | 🔜 |
-| `/portal/workspace?org=` | Workspace admin for owners and admins: name & currency, team (members, roles, invitations, seats), leave, delete (owner, type-to-confirm). Members/viewers see a "not allowed" notice and can leave from `/portal` | 🚧 |
+| `/portal/workspace?org=` | Workspace admin for owners and admins: name & currency, team (members, roles, invitations, seats), leave, delete (owner, type-to-confirm). Members/viewers see a "not allowed" notice and can leave from `/portal` | ✅ |
 | `/portal/[org]/reports` · `/settings` | Files · tiers & usage, activity, alert preferences (later merged with `/portal/workspace`) | 🔜 |
-| `/portal/invite` | Accept invitation (preview before sign-in, token kept in sessionStorage) | 🚧 |
+| `/portal/invite` | Accept invitation (preview before sign-in, token kept in sessionStorage) | ✅ |
 
 The sidebar is built from `GET /api/orgs/{org}` (`role`, modules with tier/limits/usage), so new modules appear without layout changes. Free modules show usage and an "Upgrade to Pro" hint; actions are hidden by role but always enforced server-side.
 
@@ -342,11 +363,11 @@ The sidebar is built from `GET /api/orgs/{org}` (`role`, modules with tier/limit
 
 | Phase | Scope | Status |
 |---|---|---|
-| 0 | Cognito + Google login, portal, admin via `is_admin`/`ADMIN_EMAIL`, uptime monitor (per user) | ✅/🚧 |
-| 1 | Alembic, Postgres schemas + roles per module (move existing tables, drop cross-schema FKs), workspaces, memberships, backfill, `org_access`; uptime API scoped to workspaces; portal workspace switcher | 🚧 |
+| 0 | Cognito + Google login, portal, admin via `is_admin`/`ADMIN_EMAIL`, uptime monitor | ✅ |
+| 1 | Alembic, Postgres schemas + roles per module (move existing tables, drop cross-schema FKs), workspaces, memberships, backfill, `org_access`; uptime API scoped to workspaces; portal workspace switcher | ✅ (module DB roles ⚠️ optional, not yet set up) |
 | 2 | Catalog, Free/Pro per module, `org_apps`, limits & usage, isolation test | 🔜 |
 | 3 | `core/` + `apps/` layout, engine per module role, worker container, job queue, outbox per schema + relay, uptime moved, notify, audit, module summary APIs | 🔜 |
-| 4 | Team: invitations, roles, member caps (🚧 built early, with the portal Team section and `/portal/invite`); alert preferences (🔜) | 🚧 |
+| 4 | Team: invitations, roles, member caps, `/portal/invite`, `/portal/workspace` (✅ deployed early); alert preferences (🔜) | ✅ / 🔜 |
 | 5 | Portal: workspace switcher, module sidebar, Team, Settings | 🔜 |
 | 6 | Admin: workspaces, set Pro per module, overrides, jobs | 🔜 |
 | 7 | AWS: Roles Anywhere hub, CloudFormation onboarding, connections | 🔜 |
@@ -368,4 +389,5 @@ The sidebar is built from `GET /api/orgs/{org}` (`role`, modules with tier/limit
 | 2026-10-13 | Customer access via role ARN + External ID only; CloudMindra identity via IAM Roles Anywhere. |
 | 2026-10-13 | User-selectable display currency; store original, convert with daily ECB rates. |
 | 2026-10-13 | Team rules: any user creates workspaces (max 2 free-only), member cap 3/10, exact-email invites, alerts default on for all roles. |
+| 2026-10-13 | Deployed: phase 1 (PR #1), team invitations (PR #2), workspace admin page (`d8db972`). |
 | 2026-10-13 | Database prepared for microservices: Postgres schema + role per module, no cross-schema foreign keys, access checks only via `org_access()`, transactional outbox per schema, cross-module screens via summary APIs, workspace deletion as an `org.deleted` event. |
