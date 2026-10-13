@@ -3,7 +3,6 @@
 Modules check access only through org_access() and read workspace data only through
 the functions here, never by querying core tables themselves (DESIGN.md §6 rule 7).
 """
-import os
 import uuid
 from dataclasses import dataclass
 from typing import Callable
@@ -51,11 +50,6 @@ def org_query(db: Session, model, ctx: OrgContext):
 
 # --- Workspace lifecycle ------------------------------------------------------
 
-def owned_workspace_limit() -> int:
-    # Phase 2 counts only workspaces without a Pro module
-    return int(os.getenv("WORKSPACE_LIMIT", "2"))
-
-
 def personal_workspace_name(name: str | None, email: str) -> str:
     owner = (name or "").strip() or email.split("@")[0]
     return f"{owner}'s workspace"[:100]
@@ -80,19 +74,6 @@ def ensure_workspace(db: Session, user: db_models.User) -> None:
         org_ids = [org.id]
     if user.last_org_id not in org_ids:
         user.last_org_id = org_ids[0]
-
-
-def member_limit(org: db_models.Organization) -> int:
-    """Seats per workspace: admin override, else MEMBER_LIMIT (3 on Free; phase 2 raises it to 10 with any Pro module)."""
-    return org.member_limit or int(os.getenv("MEMBER_LIMIT", "3"))
-
-
-def owned_workspace_count(db: Session, user_id: str) -> int:
-    return (
-        db.query(db_models.Membership)
-        .filter(db_models.Membership.user_id == user_id, db_models.Membership.role == "owner")
-        .count()
-    )
 
 
 # Modules register cleanup for their own rows. Phase 3 replaces this with the

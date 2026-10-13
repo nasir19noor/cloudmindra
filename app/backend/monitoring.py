@@ -13,24 +13,32 @@ import httpx
 
 from database import SessionLocal
 from mailer import send_alert_email
+from entitlements import USAGE_PROVIDERS, limits as module_limits
 from orgs import ORG_DELETE_HOOKS, alert_recipients
 import db_models
 
 logger = logging.getLogger(__name__)
 
-INTERVALS = (1, 5, 15, 30, 60)  # minutes a customer can choose
+INTERVALS = (1, 5, 15, 30, 60)  # minutes; the tier's uptime.min_interval decides which are allowed
 REQUEST_TIMEOUT = 10  # seconds
 FAILURES_BEFORE_DOWN = 2  # one blip should not page anyone
 SSL_CHECK_EVERY = timedelta(hours=6)
 SSL_WARN_DAYS = 14
-CHECK_RETENTION = timedelta(days=30)
 WORKER_TICK = 30  # seconds between scheduler passes
 MAX_CONCURRENT_CHECKS = 20
 USER_AGENT = "CloudMindra-Uptime/1.0 (+https://cloudmindra.com)"
 
 
-def max_monitors_per_workspace() -> int:
-    return int(os.getenv("MONITOR_LIMIT", "10"))
+def allowed_intervals(min_interval: int) -> list[int]:
+    return [i for i in INTERVALS if i >= min_interval]
+
+
+def _monitor_count(db, org_id: str) -> dict[str, int]:
+    return {"uptime.monitors": db.query(db_models.Monitor).filter(db_models.Monitor.org_id == org_id).count()}
+
+
+# Core reads module usage through this provider, never by querying uptime tables
+USAGE_PROVIDERS["uptime"] = _monitor_count
 
 
 def utcnow() -> datetime:
@@ -219,10 +227,15 @@ def _due_monitors() -> list[tuple[str, str, bool]]:
     db = SessionLocal()
     try:
         due = []
+        min_interval: dict[str, int] = {}  # per workspace, looked up once per pass
         for m in db.query(db_models.Monitor).filter(db_models.Monitor.is_active.is_(True)).all():
+            if m.org_id not in min_interval:
+                min_interval[m.org_id] = module_limits(db, m.org_id, "uptime")["uptime.min_interval"]
+            # A monitor saved at 1 minute on Pro is checked at the Free minimum after a downgrade
+            interval = max(m.interval_minutes, min_interval[m.org_id])
             last = aware(m.last_checked_at)
             # Small slack so a check finishing a few seconds late is not skipped a whole tick
-            if last is None or now - last >= timedelta(minutes=m.interval_minutes, seconds=-WORKER_TICK / 2):
+            if last is None or now - last >= timedelta(minutes=interval, seconds=-WORKER_TICK / 2):
                 due.append((m.id, m.url, ssl_due(m, now)))
         return due
     finally:
@@ -242,10 +255,19 @@ ORG_DELETE_HOOKS.append(delete_org_monitors)
 
 
 def _prune_old_checks() -> None:
+    """Keep each workspace's check history for its tier's uptime.history_days (7 Free / 90 Pro)."""
     db = SessionLocal()
     try:
-        cutoff = utcnow() - CHECK_RETENTION
-        db.query(db_models.MonitorCheck).filter(db_models.MonitorCheck.checked_at < cutoff).delete()
+        by_org: dict[str, list[str]] = {}
+        for m_id, org_id in db.query(db_models.Monitor.id, db_models.Monitor.org_id):
+            by_org.setdefault(org_id, []).append(m_id)
+        now = utcnow()
+        for org_id, ids in by_org.items():
+            days = module_limits(db, org_id, "uptime")["uptime.history_days"]
+            db.query(db_models.MonitorCheck).filter(
+                db_models.MonitorCheck.monitor_id.in_(ids),
+                db_models.MonitorCheck.checked_at < now - timedelta(days=days),
+            ).delete(synchronize_session=False)
         db.commit()
     finally:
         db.close()

@@ -10,15 +10,16 @@ from sqlalchemy.orm import Session
 from database import get_db
 from monitoring import (
     INTERVALS,
+    allowed_intervals,
     SSL_WARN_DAYS,
     UnsafeURL,
     assert_public_host,
     aware,
-    max_monitors_per_workspace,
     normalize_url,
     run_check,
     utcnow,
 )
+from entitlements import limits as module_limits, require_below, tier, upgrade_hint
 from orgs import OrgContext, org_access, org_query
 import db_models
 
@@ -56,9 +57,13 @@ def _owned(db: Session, monitor_id: str, ctx: OrgContext) -> db_models.Monitor:
     return m
 
 
-def _check_interval(minutes: int) -> None:
+def _check_interval(db: Session, ctx: OrgContext, minutes: int) -> None:
     if minutes not in INTERVALS:
         raise HTTPException(status_code=422, detail=f"Interval must be one of {', '.join(map(str, INTERVALS))} minutes")
+    minimum = module_limits(db, ctx.org_id, "uptime")["uptime.min_interval"]
+    if minutes < minimum:
+        raise HTTPException(status_code=402, detail=f"Checks every {minutes} minute{'s' if minutes > 1 else ''} need "
+                                                    f"Uptime Pro (this workspace's minimum is {minimum}). {upgrade_hint('uptime')}")
 
 
 def _serialize(db: Session, monitors: list[db_models.Monitor]) -> list[dict]:
@@ -109,15 +114,21 @@ def _serialize(db: Session, monitors: list[db_models.Monitor]) -> list[dict]:
 @router.get("")
 def list_monitors(ctx: OrgContext = Depends(READ), db: Session = Depends(get_db)):
     monitors = org_query(db, db_models.Monitor, ctx).order_by(db_models.Monitor.created_at).all()
-    return {"monitors": _serialize(db, monitors), "limit": max_monitors_per_workspace(), "intervals": INTERVALS}
+    lim = module_limits(db, ctx.org_id, "uptime")
+    return {
+        "monitors": _serialize(db, monitors),
+        "tier": tier(db, ctx.org_id, "uptime"),
+        "limit": lim["uptime.monitors"],
+        "intervals": allowed_intervals(lim["uptime.min_interval"]),
+        "locked_intervals": [i for i in INTERVALS if i < lim["uptime.min_interval"]],
+        "history_days": lim["uptime.history_days"],
+    }
 
 
 @router.post("", status_code=201)
 async def create_monitor(payload: MonitorCreate, ctx: OrgContext = Depends(WRITE), db: Session = Depends(get_db)):
-    _check_interval(payload.interval_minutes)
-    limit = max_monitors_per_workspace()
-    if org_query(db, db_models.Monitor, ctx).count() >= limit:
-        raise HTTPException(status_code=403, detail=f"This workspace can monitor up to {limit} URLs")
+    _check_interval(db, ctx, payload.interval_minutes)
+    require_below(db, ctx.org_id, "uptime.monitors", org_query(db, db_models.Monitor, ctx).count())
     try:
         url = normalize_url(payload.url)
         await asyncio.to_thread(assert_public_host, url)
@@ -142,7 +153,7 @@ def update_monitor(monitor_id: str, payload: MonitorUpdate, ctx: OrgContext = De
     if payload.name is not None:
         m.name = payload.name.strip()
     if payload.interval_minutes is not None:
-        _check_interval(payload.interval_minutes)
+        _check_interval(db, ctx, payload.interval_minutes)
         m.interval_minutes = payload.interval_minutes
     if payload.is_active is not None and payload.is_active != m.is_active:
         m.is_active = payload.is_active
@@ -174,7 +185,7 @@ async def check_now(monitor_id: str, ctx: OrgContext = Depends(WRITE), db: Sessi
 def monitor_checks(monitor_id: str, hours: int = 24, ctx: OrgContext = Depends(READ),
                    db: Session = Depends(get_db)):
     m = _owned(db, monitor_id, ctx)
-    hours = max(1, min(hours, 24 * 30))
+    hours = max(1, min(hours, 24 * module_limits(db, ctx.org_id, "uptime")["uptime.history_days"]))
     rows = (
         db.query(db_models.MonitorCheck)
         .filter(db_models.MonitorCheck.monitor_id == m.id,
