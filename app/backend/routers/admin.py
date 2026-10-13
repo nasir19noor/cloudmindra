@@ -3,13 +3,14 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from auth import require_admin
 from cognito_auth import SESSION_COOKIE, current_user
 from database import get_db
+from orgs import member_limit
 import db_models
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -67,6 +68,65 @@ async def update_user(
     row.is_admin = payload.is_admin
     db.commit()
     return _user_out(row, me and me["sub"])
+
+
+class SeatLimitUpdate(BaseModel):
+    # None removes the override and falls back to the default (MEMBER_LIMIT)
+    member_limit: int | None = Field(None, ge=1, le=1000)
+
+
+def _workspace_out(org: db_models.Organization, owners: list[str], members: int, pending: int) -> dict:
+    return {
+        "id": org.id,
+        "name": org.name,
+        "owners": owners,
+        "members": members,
+        "pending_invites": pending,
+        "member_limit": org.member_limit,
+        "effective_limit": member_limit(org),
+        "default_limit": member_limit(db_models.Organization()),
+        "created_at": org.created_at.isoformat() if org.created_at else None,
+    }
+
+
+def _seat_counts(db: Session):
+    members = dict(
+        db.query(db_models.Membership.org_id, func.count(db_models.Membership.id))
+        .group_by(db_models.Membership.org_id).all()
+    )
+    pending = dict(
+        db.query(db_models.Invitation.org_id, func.count(db_models.Invitation.id))
+        .filter(db_models.Invitation.accepted_at.is_(None),
+                db_models.Invitation.expires_at > datetime.now(timezone.utc))
+        .group_by(db_models.Invitation.org_id).all()
+    )
+    owners = defaultdict(list)
+    for org_id, email in (
+        db.query(db_models.Membership.org_id, db_models.User.email)
+        .join(db_models.User, db_models.User.id == db_models.Membership.user_id)
+        .filter(db_models.Membership.role == "owner")
+    ):
+        owners[org_id].append(email)
+    return members, pending, owners
+
+
+@router.get("/orgs")
+async def list_workspaces(db: Session = Depends(get_db), _: str = Depends(require_admin)):
+    members, pending, owners = _seat_counts(db)
+    orgs = db.query(db_models.Organization).order_by(db_models.Organization.created_at.desc()).all()
+    return [_workspace_out(o, sorted(owners[o.id]), members.get(o.id, 0), pending.get(o.id, 0)) for o in orgs]
+
+
+@router.put("/orgs/{org_id}")
+async def update_workspace_seats(org_id: str, payload: SeatLimitUpdate, db: Session = Depends(get_db),
+                                 _: str = Depends(require_admin)):
+    org = db.get(db_models.Organization, org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    org.member_limit = payload.member_limit
+    db.commit()
+    members, pending, owners = _seat_counts(db)
+    return _workspace_out(org, sorted(owners[org.id]), members.get(org.id, 0), pending.get(org.id, 0))
 
 
 @router.get("/me")

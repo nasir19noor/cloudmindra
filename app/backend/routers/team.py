@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -88,8 +88,8 @@ def _invite_out(inv: db_models.Invitation) -> dict:
             "expires_at": _iso(inv.expires_at), "created_at": _iso(inv.created_at)}
 
 
-def _send_invite(to: str, inviter: str, workspace: str, role: str, token: str, expires: datetime) -> None:
-    send_invitation_email(
+def _send_invite(to: str, inviter: str, workspace: str, role: str, token: str, expires: datetime) -> bool:
+    return send_invitation_email(
         to,
         f"{inviter} invited you to {workspace} on CloudMindra",
         f"{inviter} invited you to join the workspace \"{workspace}\" on CloudMindra as {role}.\n\n"
@@ -108,8 +108,8 @@ def list_invitations(ctx: OrgContext = Depends(org_access("members.manage")), db
 
 
 @router.post("/api/orgs/{org_id}/invitations", status_code=201)
-def invite(payload: InviteCreate, background: BackgroundTasks,
-           ctx: OrgContext = Depends(org_access("members.manage")), db: Session = Depends(get_db)):
+def invite(payload: InviteCreate, ctx: OrgContext = Depends(org_access("members.manage")),
+           db: Session = Depends(get_db)):
     email = payload.email.strip().lower()
     org = db.get(db_models.Organization, ctx.org_id)
 
@@ -143,8 +143,13 @@ def invite(payload: InviteCreate, background: BackgroundTasks,
     db.commit()
 
     inviter = db.get(db_models.User, ctx.user_id)
-    background.add_task(_send_invite, email, (inviter.name or inviter.email), org.name, payload.role, token, expires)
-    return _invite_out(inv)
+    # Sent in the request (not a background task) so the inviter learns when delivery fails,
+    # e.g. SES still in sandbox mode. Then they get the link to share themselves.
+    sent = _send_invite(email, (inviter.name or inviter.email), org.name, payload.role, token, expires)
+    out = {**_invite_out(inv), "email_sent": sent}
+    if not sent:
+        out["invite_link"] = _invite_link(token)
+    return out
 
 
 @router.delete("/api/orgs/{org_id}/invitations/{invitation_id}", status_code=204)
