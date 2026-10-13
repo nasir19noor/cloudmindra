@@ -1,0 +1,206 @@
+---
+import PortalLayout from '../../../layouts/PortalLayout.astro';
+
+const { org } = Astro.params;
+---
+
+<PortalLayout title="Uptime Monitor" org={org!} section="uptime">
+  <section class="card p-6">
+    <div>
+      <p class="eyebrow">
+        Uptime monitors <span id="mon-count" class="text-fg/45"></span>
+        <span id="mon-plan" class="ml-2 hidden rounded-full px-2 py-0.5 align-middle text-[10px] tracking-[0.1em]"></span>
+      </p>
+      <p class="mt-2 text-caption text-fg/55">We check your sites around the clock and email you when they go down, recover, or an SSL certificate is about to expire.</p>
+      <p id="mon-plan-note" class="mt-1 hidden text-caption text-fg/55"></p>
+    </div>
+
+    <form id="mon-form" class="mt-6 hidden gap-3">
+      <div class="grid gap-3 md:grid-cols-[1fr_1.6fr_auto_auto]">
+        <input name="name" required maxlength="100" placeholder="Name, e.g. Company website" class="field" aria-label="Monitor name" />
+        <input name="url" required maxlength="2048" placeholder="https://example.com" class="field" aria-label="URL to monitor" />
+        <select name="interval" class="field md:w-[150px]" aria-label="Check interval"></select>
+        <button type="submit" class="h-[46px] rounded-full bg-fg px-6 text-body font-medium text-canvas transition-opacity hover:opacity-90 disabled:opacity-60">
+          Add monitor
+        </button>
+      </div>
+    </form>
+    <p id="mon-error" class="mt-3 hidden text-caption text-red-600" role="alert"></p>
+
+    <div id="mon-list" class="mt-6 space-y-3"></div>
+  </section>
+</PortalLayout>
+
+<script>
+  import { $, esc, ago, errorText, showMsg } from '../../../lib/portal';
+  import { bootPortal } from '../../../lib/shell';
+
+  type Check = { at: string; ok: boolean; ms: number | null; error: string | null };
+  type Monitor = {
+    id: string; name: string; url: string; interval_minutes: number; is_active: boolean;
+    status: 'pending' | 'up' | 'down' | 'paused'; last_checked_at: string | null; last_status_code: number | null;
+    last_response_ms: number | null; last_error: string | null; down_since: string | null;
+    ssl_days_left: number | null; ssl_warning: boolean; uptime_24h: number | null; recent: Check[];
+  };
+
+  const STATUS = {
+    up: { label: 'Up', dot: 'bg-emerald-500', text: 'text-emerald-700' },
+    down: { label: 'Down', dot: 'bg-red-500', text: 'text-red-600' },
+    pending: { label: 'Checking…', dot: 'bg-fg/30', text: 'text-fg/60' },
+    paused: { label: 'Paused', dot: 'bg-fg/30', text: 'text-fg/60' },
+  };
+
+  const ctx = await bootPortal();
+  const canWrite = ctx.workspace.role !== 'viewer';
+  const monUrl = (path = '') => ctx.orgApi(`/uptime/monitors${path}`);
+  let monitors: Monitor[] = [];
+  let limit = 10;
+
+  function renderMonitor(m: Monitor) {
+    const st = STATUS[m.status];
+    const bars = m.recent.length
+      ? m.recent
+          .map(
+            (c) =>
+              `<span class="h-6 flex-1 rounded-[2px] ${c.ok ? 'bg-emerald-500/80' : 'bg-red-500/80'}" title="${esc(
+                new Date(c.at).toLocaleString(),
+              )} · ${c.ok ? esc(c.ms) + ' ms' : esc(c.error)}"></span>`,
+          )
+          .join('')
+      : '<span class="text-caption text-fg/45">No checks yet</span>';
+    const detail =
+      m.status === 'down'
+        ? [m.last_error, m.down_since ? `down since ${ago(m.down_since)}` : null].filter(Boolean).map(esc).join(' · ')
+        : m.last_response_ms != null
+          ? `HTTP ${esc(m.last_status_code)} · ${esc(m.last_response_ms)} ms`
+          : esc(m.last_error ?? '');
+    const ssl =
+      m.ssl_days_left == null
+        ? ''
+        : `<span class="${m.ssl_warning ? 'font-medium text-amber-700' : ''}">SSL ${m.ssl_days_left < 0 ? 'expired' : `${esc(m.ssl_days_left)} days left`}</span>`;
+    const actions = canWrite
+      ? `<div class="flex shrink-0 gap-2">
+          <button data-action="check" class="btn-secondary h-[30px] px-3 text-[12px]" ${m.is_active ? '' : 'disabled'}>Check now</button>
+          <button data-action="toggle" class="btn-secondary h-[30px] px-3 text-[12px]">${m.is_active ? 'Pause' : 'Resume'}</button>
+          <button data-action="delete" class="btn-secondary h-[30px] px-3 text-[12px] text-red-600">Delete</button>
+        </div>`
+      : '';
+    return `
+      <article class="rounded-2xl p-5 ring-1 ring-fg/[0.08]" data-id="${esc(m.id)}">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="min-w-0">
+            <div class="flex items-center gap-2.5">
+              <span class="h-2.5 w-2.5 shrink-0 rounded-full ${st.dot}"></span>
+              <h3 class="truncate text-body font-medium">${esc(m.name)}</h3>
+              <span class="text-caption font-medium ${st.text}">${st.label}</span>
+            </div>
+            <a href="${esc(m.url)}" target="_blank" rel="noopener noreferrer" class="mt-1 block truncate text-caption text-fg/55 hover:underline">${esc(m.url)}</a>
+          </div>
+          ${actions}
+        </div>
+        <div class="mt-4 flex items-end gap-[2px]" aria-label="Recent checks">${bars}</div>
+        <div class="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-caption text-fg/60">
+          <span>${detail}</span>
+          <span>Uptime 24h: <span class="font-medium text-fg">${m.uptime_24h == null ? '–' : esc(m.uptime_24h) + '%'}</span></span>
+          ${ssl}
+          <span>Every ${esc(m.interval_minutes)} min · checked ${esc(ago(m.last_checked_at))}</span>
+        </div>
+      </article>`;
+  }
+
+  function renderMonitors() {
+    $('mon-count').textContent = `· ${monitors.length} of ${limit}`;
+    $('mon-form').classList.toggle('hidden', !canWrite);
+    const empty = canWrite ? 'Add your first URL above to start monitoring.' : 'No monitors in this workspace yet.';
+    $('mon-list').innerHTML = monitors.length
+      ? monitors.map(renderMonitor).join('')
+      : `<p class="rounded-2xl px-5 py-8 text-center text-caption text-fg/50 ring-1 ring-dashed ring-fg/10">${empty}</p>`;
+  }
+
+  async function loadMonitors() {
+    const res = await ctx.api(monUrl()).catch(() => null);
+    if (!res?.ok) return;
+    const data = await res.json();
+    monitors = data.monitors;
+    limit = data.limit;
+    // Intervals depend on the workspace's tier: Pro-only ones are listed but disabled
+    const select = document.querySelector<HTMLSelectElement>('#mon-form select')!;
+    const previous = Number(select.value) || 5;
+    const all = [...data.locked_intervals, ...data.intervals].sort((a: number, b: number) => a - b);
+    const chosen = data.intervals.includes(previous) ? previous : data.intervals[0];
+    select.innerHTML = all
+      .map((n: number) => {
+        const locked = data.locked_intervals.includes(n);
+        return `<option value="${n}" ${locked ? 'disabled' : ''} ${n === chosen ? 'selected' : ''}>Every ${n} min${locked ? ' (Pro)' : ''}</option>`;
+      })
+      .join('');
+
+    const pro = data.tier === 'pro';
+    const badge = $('mon-plan');
+    badge.textContent = pro ? 'PRO' : 'FREE';
+    badge.className = `ml-2 rounded-full px-2 py-0.5 align-middle text-[10px] tracking-[0.1em] ${
+      pro ? 'bg-brand/15 text-brand' : 'bg-fg/[0.06] text-fg/60'
+    }`;
+    const note = $('mon-plan-note');
+    note.textContent = pro
+      ? `Pro: up to ${data.limit} monitors, checks every minute, ${data.history_days} days of history.`
+      : `Free: up to ${data.limit} monitors, checks every ${data.intervals[0]} minutes or more, ${data.history_days} days of history. ` +
+        'Contact CloudMindra to upgrade to Pro for 1-minute checks and more monitors.';
+    note.classList.remove('hidden');
+    renderMonitors();
+  }
+
+  $('mon-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget as HTMLFormElement;
+    const btn = form.querySelector('button')!;
+    const data = new FormData(form);
+    btn.disabled = true;
+    btn.textContent = 'Checking…';
+    showMsg('mon-error', null);
+    const res = await ctx.api(monUrl(), {
+      method: 'POST',
+      body: JSON.stringify({ name: data.get('name'), url: data.get('url'), interval_minutes: Number(data.get('interval')) }),
+    }).catch(() => null);
+    btn.disabled = false;
+    btn.textContent = 'Add monitor';
+    if (!res?.ok) return showMsg('mon-error', await errorText(res, 'Could not add monitor'));
+    (form.elements.namedItem('name') as HTMLInputElement).value = '';
+    (form.elements.namedItem('url') as HTMLInputElement).value = '';
+    monitors.push(await res.json());
+    renderMonitors();
+  });
+
+  $('mon-list').addEventListener('click', async (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-action]');
+    const card = btn?.closest<HTMLElement>('[data-id]');
+    if (!btn || !card || btn.disabled) return;
+    const id = card.dataset.id!;
+    const m = monitors.find((x) => x.id === id)!;
+    const action = btn.dataset.action;
+    showMsg('mon-error', null);
+    if (action === 'delete' && !confirm(`Stop monitoring ${m.name}? Its check history will be deleted.`)) return;
+    btn.disabled = true;
+
+    let res: Response | null = null;
+    if (action === 'check') res = await ctx.api(monUrl(`/${id}/check`), { method: 'POST' }).catch(() => null);
+    if (action === 'toggle')
+      res = await ctx.api(monUrl(`/${id}`), { method: 'PATCH', body: JSON.stringify({ is_active: !m.is_active }) }).catch(() => null);
+    if (action === 'delete') res = await ctx.api(monUrl(`/${id}`), { method: 'DELETE' }).catch(() => null);
+
+    if (!res?.ok) {
+      btn.disabled = false;
+      return showMsg('mon-error', await errorText(res, 'Something went wrong'));
+    }
+    if (action === 'delete') monitors = monitors.filter((x) => x.id !== id);
+    else {
+      const updated = await res.json();
+      monitors = monitors.map((x) => (x.id === id ? updated : x));
+    }
+    renderMonitors();
+  });
+
+  await loadMonitors();
+  // Keep statuses fresh while the page is open
+  setInterval(() => document.visibilityState === 'visible' && loadMonitors(), 60_000);
+</script>

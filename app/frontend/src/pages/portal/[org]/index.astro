@@ -1,0 +1,118 @@
+---
+import PortalLayout from '../../../layouts/PortalLayout.astro';
+
+const { org } = Astro.params;
+---
+
+<PortalLayout title="Overview" org={org!} section="">
+  <div class="card p-6">
+    <p class="eyebrow mb-2">Overview</p>
+    <h1 class="font-display text-display-sm font-light" id="ov-title"></h1>
+    <p class="mt-2 text-body text-fg/60" id="ov-sub"></p>
+  </div>
+
+  <!-- One tile per module, filled from each module's summary API -->
+  <div id="ov-modules" class="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3"></div>
+
+  <div class="mt-4 grid gap-4 lg:grid-cols-2">
+    <section class="card p-6">
+      <p class="eyebrow">Team</p>
+      <p id="ov-team" class="mt-3 text-body text-fg/70">–</p>
+      <a id="ov-team-link" href="#" class="mt-4 inline-block text-caption font-medium text-brand hover:underline"></a>
+    </section>
+    <section class="card p-6">
+      <p class="eyebrow">Your email alerts</p>
+      <p id="ov-alerts" class="mt-3 text-body text-fg/70">–</p>
+      <a id="ov-alerts-link" href="#" class="mt-4 inline-block text-caption font-medium text-brand hover:underline">Choose your alerts →</a>
+    </section>
+  </div>
+
+  <section id="ov-activity-card" class="card mt-4 hidden p-6">
+    <div class="flex items-center justify-between gap-3">
+      <p class="eyebrow">Recent activity</p>
+      <a id="ov-activity-link" href="#" class="text-caption font-medium text-brand hover:underline">All activity →</a>
+    </div>
+    <ul id="ov-activity" class="mt-4 divide-y divide-fg/[0.06] rounded-2xl ring-1 ring-fg/[0.08]"></ul>
+  </section>
+</PortalLayout>
+
+<script>
+  import { $, esc, ROLE_LABEL, renderActivity } from '../../../lib/portal';
+  import { bootPortal, type Module } from '../../../lib/shell';
+
+  const ctx = await bootPortal();
+  const ws = ctx.workspace;
+  $('ov-title').textContent = ws.name;
+  $('ov-sub').textContent = `You are ${ROLE_LABEL[ws.role].toLowerCase()} · ${ws.member_count} member${ws.member_count === 1 ? '' : 's'} · costs shown in ${ws.currency}`;
+
+  const tierBadge = (m: Module) =>
+    m.tier === 'pro'
+      ? '<span class="rounded-full bg-brand/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.1em] text-brand">Pro</span>'
+      : '<span class="rounded-full bg-fg/[0.06] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.1em] text-fg/60">Free</span>';
+
+  function tile(m: Module, body: string) {
+    return `
+      <a href="${esc(ctx.orgPath(m.key))}" class="card block p-6 transition-shadow hover:ring-fg/20 ${m.available ? '' : 'opacity-60'}">
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-body font-medium">${esc(m.name)}</p>
+          ${m.available ? tierBadge(m) : '<span class="text-[10px] uppercase tracking-[0.1em] text-fg/45">Coming soon</span>'}
+        </div>
+        <div class="mt-4 text-caption text-fg/65">${body}</div>
+      </a>`;
+  }
+
+  // Module-specific summary renderers; modules without one show their usage
+  const summaries: Record<string, (m: Module) => Promise<string>> = {
+    uptime: async (m) => {
+      const res = await ctx.api(ctx.orgApi('/uptime/summary')).catch(() => null);
+      if (!res?.ok) return 'Could not load status';
+      const s = await res.json();
+      if (!s.monitors) return 'No monitors yet. <span class="text-brand">Add your first site →</span>';
+      const down = s.down ? `<span class="font-medium text-red-600">${s.down} down</span>` : '<span class="font-medium text-emerald-700">All up</span>';
+      return `<p class="font-display text-[28px] font-light text-fg">${s.monitors} <span class="text-body text-fg/55">of ${m.limits['uptime.monitors']} monitors</span></p>
+              <p class="mt-1">${down} · ${s.up} up${s.paused ? ` · ${s.paused} paused` : ''}${s.pending ? ` · ${s.pending} checking` : ''}</p>`;
+    },
+  };
+
+  const tiles = await Promise.all(
+    ctx.modules.map(async (m) => {
+      if (!m.available) {
+        const first = Object.keys(m.limits)[0];
+        return tile(m, `Free plan will include ${esc(m.limits[first])} ${esc(m.labels[first] ?? first)}.`);
+      }
+      return tile(m, summaries[m.key] ? await summaries[m.key](m) : 'Open the module');
+    }),
+  );
+  $('ov-modules').innerHTML = tiles.join('');
+
+  // Team
+  const team = await ctx.api(ctx.orgApi('/members')).catch(() => null);
+  if (team?.ok) {
+    const t = await team.json();
+    $('ov-team').textContent = `${t.members.length} member${t.members.length === 1 ? '' : 's'} · ${t.seats.used} of ${t.seats.limit} seats used (including pending invitations).`;
+  }
+  const teamLink = $<HTMLAnchorElement>('ov-team-link');
+  teamLink.href = ctx.canManage ? ctx.orgPath('settings') : ctx.orgPath('alerts');
+  teamLink.textContent = ctx.canManage ? 'Invite people and manage roles →' : '';
+
+  // Alerts summary
+  $<HTMLAnchorElement>('ov-alerts-link').href = ctx.orgPath('alerts');
+  const alerts = await ctx.api(ctx.orgApi('/notifications')).catch(() => null);
+  if (alerts?.ok) {
+    const prefs: { email: boolean }[] = await alerts.json();
+    const on = prefs.filter((p) => p.email).length;
+    $('ov-alerts').textContent = prefs.length
+      ? `You receive ${on} of ${prefs.length} alert types for this workspace.`
+      : 'No alerts available yet.';
+  }
+
+  // Recent activity (owners and admins)
+  if (ctx.canManage) {
+    const act = await ctx.api(ctx.orgApi('/activity?limit=5')).catch(() => null);
+    if (act?.ok) {
+      $('ov-activity').innerHTML = renderActivity(await act.json());
+      $<HTMLAnchorElement>('ov-activity-link').href = `${ctx.orgPath('settings')}#activity`;
+      $('ov-activity-card').classList.remove('hidden');
+    }
+  }
+</script>

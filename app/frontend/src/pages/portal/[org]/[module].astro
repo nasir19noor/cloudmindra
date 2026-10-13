@@ -1,0 +1,41 @@
+---
+// Modules that are listed in the catalog but not built yet (review, cost, security, iac).
+// Built modules have their own page (e.g. uptime.astro), which Astro prefers over this route.
+import PortalLayout from '../../../layouts/PortalLayout.astro';
+
+const { org, module } = Astro.params;
+---
+
+<PortalLayout title="Coming soon" org={org!} section={module!}>
+  <section class="card p-8">
+    <p class="eyebrow mb-2" id="mod-eyebrow">Coming soon</p>
+    <h1 class="font-display text-display-sm font-light" id="mod-name"></h1>
+    <p class="mt-3 max-w-[60ch] text-body text-fg/65" id="mod-text"></p>
+    <div id="mod-tiers" class="mt-6 grid gap-4 sm:grid-cols-2"></div>
+    <a href="/contact" class="mt-6 inline-block text-caption font-medium text-brand hover:underline">Tell us you're interested →</a>
+  </section>
+</PortalLayout>
+
+<script>
+  import { $, esc } from '../../../lib/portal';
+  import { bootPortal } from '../../../lib/shell';
+
+  const ctx = await bootPortal();
+  const key = $('portal-shell').dataset.section!;
+  const m = ctx.modules.find((x) => x.key === key);
+  if (!m) {
+    $('mod-eyebrow').textContent = 'Not found';
+    $('mod-name').textContent = 'This page does not exist';
+    $('mod-text').textContent = 'Pick a module from the sidebar.';
+  } else {
+    $('mod-name').textContent = m.name;
+    $('mod-text').textContent = m.available
+      ? `${m.name} is available — open it from the sidebar.`
+      : `${m.name} is on its way. Every module starts on Free, and you can upgrade just this module to Pro later. Planned limits on your current plan (${m.tier === 'pro' ? 'Pro' : 'Free'}):`;
+    const lines = Object.keys(m.limits)
+      .map((k) => `<li>${esc(m.limits[k])} ${esc(m.labels[k] ?? k)}</li>`)
+      .concat(m.features.map((f) => `<li>${esc(f)}</li>`))
+      .join('');
+    $('mod-tiers').innerHTML = `<div class="rounded-2xl p-5 ring-1 ring-fg/[0.08]"><ul class="list-disc space-y-1 pl-5 text-caption text-fg/70">${lines}</ul></div>`;
+  }
+</script>

@@ -18,8 +18,8 @@ class DeliveryFailed(RuntimeError):
     """Raised so the job is retried."""
 
 
-def settings_link() -> str:
-    return f"{os.getenv('FRONTEND_URL', 'https://cloudmindra.com').rstrip('/')}/portal#alerts"
+def settings_link(org_id: str) -> str:
+    return f"{os.getenv('FRONTEND_URL', 'https://cloudmindra.com').rstrip('/')}/portal/{org_id}/alerts"
 
 
 def notify(db: Session, org_id: str, event_key: str, subject: str, body: str, *, dedupe: str) -> int:
@@ -27,7 +27,7 @@ def notify(db: Session, org_id: str, event_key: str, subject: str, body: str, *,
     recipients = alert_recipients(db, org_id, event_key)
     if not smtp_configured():
         return 0
-    footer = f"\n—\nYou receive this because you are in a CloudMindra workspace. Choose which alerts you get: {settings_link()}\n"
+    footer = f"\n—\nYou receive this because you are in a CloudMindra workspace. Choose which alerts you get: {settings_link(org_id)}\n"
     for to in recipients:
         jobs.enqueue(db, "notify.email", {"to": to, "subject": subject, "body": body + footer, "event_key": event_key},
                      org_id=org_id, app_key="core", dedupe_key=f"notify:{dedupe}:{to}")

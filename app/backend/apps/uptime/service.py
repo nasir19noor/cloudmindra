@@ -141,8 +141,9 @@ def _fmt_duration(delta: timedelta) -> str:
     return f"{hours} h {minutes} min" if hours < 24 else f"{hours // 24} d {hours % 24} h"
 
 
-def _portal_link() -> str:
-    return f"{os.getenv('FRONTEND_URL', 'https://cloudmindra.com').rstrip('/')}/portal"
+def _portal_link(org_id: str) -> str:
+    """The workspace's uptime page (DESIGN.md §11)."""
+    return f"{os.getenv('FRONTEND_URL', 'https://cloudmindra.com').rstrip('/')}/portal/{org_id}/uptime"
 
 
 def record_result(monitor_id: str, result: dict, ssl_expires: datetime | None, ssl_checked: bool) -> None:
@@ -168,7 +169,7 @@ def record_result(monitor_id: str, result: dict, ssl_expires: datetime | None, s
                 downtime = _fmt_duration(now - aware(m.down_since)) if m.down_since else "a while"
                 alerts.append(("uptime.recovered", f"✅ {m.name} is back up",
                                f"{m.name} ({m.url}) is responding again after {downtime} of downtime.\n\n"
-                               f"Status: HTTP {result['status_code']} in {result['response_ms']} ms\n\n{_portal_link()}\n"))
+                               f"Status: HTTP {result['status_code']} in {result['response_ms']} ms\n\n{_portal_link(m.org_id)}\n"))
             m.status = "up"
             m.consecutive_failures = 0
             m.down_since = None
@@ -181,7 +182,7 @@ def record_result(monitor_id: str, result: dict, ssl_expires: datetime | None, s
                                f"{m.name} ({m.url}) failed {m.consecutive_failures} checks in a row.\n\n"
                                f"Error: {result['error']}\n"
                                f"Detected: {now:%Y-%m-%d %H:%M} UTC\n\n"
-                               f"We'll email you again when it recovers.\n\n{_portal_link()}\n"))
+                               f"We'll email you again when it recovers.\n\n{_portal_link(m.org_id)}\n"))
 
         if ssl_checked:
             m.ssl_checked_at = now
@@ -193,7 +194,7 @@ def record_result(monitor_id: str, result: dict, ssl_expires: datetime | None, s
                     m.ssl_alerted_for = ssl_expires
                     alerts.append(("uptime.ssl_expiring", f"⚠️ SSL certificate for {m.name} expires in {max(days_left, 0)} days",
                                    f"The SSL certificate for {m.url} expires on {ssl_expires:%Y-%m-%d}.\n\n"
-                                   f"Renew it before then to avoid browser security warnings.\n\n{_portal_link()}\n"))
+                                   f"Renew it before then to avoid browser security warnings.\n\n{_portal_link(m.org_id)}\n"))
         # Same transaction as the state change: the alert exists exactly when the change does
         for event_type, subject, body in alerts:
             emit(db, db_models.UptimeOutbox, event_type, m.org_id,

@@ -1,4 +1,6 @@
 ---
+// Portal entry (DESIGN.md §11): sign-in when signed out, otherwise go to the last workspace.
+// The workspace pages themselves live under /portal/{org}/….
 import Layout from '../layouts/Layout.astro';
 
 const API_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cloudmindra.com';
@@ -6,10 +8,8 @@ const API_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cloudmindra.com';
 
 <Layout title="Client Portal" description="Sign in to the CloudMindra client portal">
   <section class="px-6 pb-24 pt-36" data-api={API_URL} id="portal">
-    <!-- Loading -->
     <p id="view-loading" class="text-center text-body text-fg/60">Loading…</p>
 
-    <!-- Signed out -->
     <div id="view-login" class="card mx-auto hidden max-w-[420px] space-y-5 p-8">
       <div>
         <p class="eyebrow mb-3">Client Portal</p>
@@ -30,455 +30,41 @@ const API_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cloudmindra.com';
       </a>
       <a href={`${API_URL}/api/auth/login`} class="btn-secondary h-[44px] w-full">Sign in with email</a>
     </div>
-
-    <!-- Signed in -->
-    <div id="view-account" class="mx-auto hidden max-w-[1000px]">
-      <div class="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div>
-          <p class="eyebrow mb-3">Client Portal</p>
-          <h1 class="font-display text-display-sm font-light">Welcome, <span id="user-name"></span></h1>
-          <p class="mt-2 text-body text-fg/60"><span id="user-email"></span> · signed in with <span id="user-provider"></span></p>
-        </div>
-        <div class="flex gap-3">
-          <a id="admin-link" href="/admin" class="btn-secondary hidden h-[36px] text-caption">Admin dashboard</a>
-          <a href={`${API_URL}/api/auth/logout`} class="btn-secondary h-[36px] text-caption">Sign out</a>
-        </div>
-      </div>
-
-      <!-- Workspace switcher -->
-      <div class="mt-8 flex flex-wrap items-center gap-3">
-        <label for="ws-select" class="eyebrow">Workspace</label>
-        <select id="ws-select" class="field h-[40px] w-auto min-w-[220px] py-0"></select>
-        <span id="ws-role" class="rounded-full bg-fg/[0.06] px-3 py-1 text-[12px] font-medium capitalize text-fg/70"></span>
-        <a id="ws-manage" href="/portal/workspace" class="btn-secondary hidden h-[36px] text-caption">Manage workspace</a>
-        <button id="ws-leave" type="button" class="btn-secondary hidden h-[36px] text-caption">Leave</button>
-        <button id="ws-new" type="button" class="btn-secondary h-[36px] text-caption">New workspace</button>
-      </div>
-      <p id="ws-error" class="mt-2 hidden text-caption text-red-600" role="alert"></p>
-
-      <!-- Uptime monitors -->
-      <section class="card mt-4 p-6">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p class="eyebrow">
-              Uptime monitors <span id="mon-count" class="text-fg/45"></span>
-              <span id="mon-plan" class="ml-2 hidden rounded-full px-2 py-0.5 align-middle text-[10px] tracking-[0.1em]"></span>
-            </p>
-            <p class="mt-2 text-caption text-fg/55">We check your sites around the clock and email you when they go down, recover, or an SSL certificate is about to expire.</p>
-            <p id="mon-plan-note" class="mt-1 hidden text-caption text-fg/55"></p>
-          </div>
-        </div>
-
-        <form id="mon-form" class="mt-6 grid gap-3 md:grid-cols-[1fr_1.6fr_auto_auto]">
-          <input name="name" required maxlength="100" placeholder="Name, e.g. Company website" class="field" aria-label="Monitor name" />
-          <input name="url" required maxlength="2048" placeholder="https://example.com" class="field" aria-label="URL to monitor" />
-          <select name="interval" class="field md:w-[150px]" aria-label="Check interval"></select>
-          <button type="submit" class="h-[46px] rounded-full bg-fg px-6 text-body font-medium text-canvas transition-opacity hover:opacity-90 disabled:opacity-60">
-            Add monitor
-          </button>
-        </form>
-        <p id="mon-error" class="mt-3 hidden text-caption text-red-600" role="alert"></p>
-
-        <div id="mon-list" class="mt-6 space-y-3"></div>
-      </section>
-
-      <!-- Email alerts (per member, per workspace) -->
-      <section id="alerts" class="card mt-4 scroll-mt-28 p-6">
-        <p class="eyebrow">Email alerts</p>
-        <p class="mt-2 text-caption text-fg/55">Choose which alerts you receive for this workspace. This only changes your own emails.</p>
-        <ul id="alert-list" class="mt-5 divide-y divide-fg/[0.06] rounded-2xl ring-1 ring-fg/[0.08]"></ul>
-        <p id="alert-msg" class="mt-3 hidden text-caption" role="status"></p>
-      </section>
-    </div>
   </section>
 </Layout>
 
 <script>
-  const root = document.getElementById('portal')!;
-  const API = root.dataset.api as string;
+  import { $, createApi } from '../lib/portal';
 
-  type Check = { at: string; ok: boolean; ms: number | null; error: string | null };
-  type Monitor = {
-    id: string;
-    name: string;
-    url: string;
-    interval_minutes: number;
-    is_active: boolean;
-    status: 'pending' | 'up' | 'down' | 'paused';
-    last_checked_at: string | null;
-    last_status_code: number | null;
-    last_response_ms: number | null;
-    last_error: string | null;
-    down_since: string | null;
-    ssl_days_left: number | null;
-    ssl_warning: boolean;
-    uptime_24h: number | null;
-    recent: Check[];
-  };
-
+  const api = createApi($('portal').dataset.api as string);
   const ERRORS: Record<string, string> = {
     cancelled: 'Sign-in was cancelled.',
     expired: 'Your sign-in session expired. Please try again.',
     failed: 'Sign-in failed. Please try again.',
   };
 
-  const $ = (id: string) => document.getElementById(id)!;
-
-  // Every customer-supplied value goes through esc() before touching innerHTML
-  const esc = (v: unknown) =>
-    String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-
-  function ago(iso: string | null) {
-    if (!iso) return 'never';
-    const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
-    if (s < 60) return 'just now';
-    if (s < 3600) return `${Math.floor(s / 60)} min ago`;
-    if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
-    return `${Math.floor(s / 86400)} d ago`;
+  function showLogin() {
+    $('view-loading').classList.add('hidden');
+    $('view-login').classList.remove('hidden');
   }
 
-  function show(view: 'loading' | 'login' | 'account') {
-    for (const v of ['loading', 'login', 'account']) $(`view-${v}`).classList.toggle('hidden', v !== view);
+  const error = new URLSearchParams(location.search).get('error');
+  if (error) {
+    $('login-error').textContent = ERRORS[error] ?? ERRORS.failed;
+    $('login-error').classList.remove('hidden');
+    history.replaceState(null, '', location.pathname);
   }
 
-  async function api(path: string, init: RequestInit = {}) {
-    return fetch(`${API}${path}`, {
-      credentials: 'include',
-      ...init,
-      headers: { 'Content-Type': 'application/json', ...(init.headers || {}) },
-    });
+  const me = await api('/api/auth/me').catch(() => null);
+  if (!me?.ok) {
+    showLogin();
+  } else {
+    // Signed in: open the workspace used last (sign-in guarantees at least one)
+    const list = await (await api('/api/orgs')).json();
+    const org = list.workspaces.some((w: { id: string }) => w.id === list.last_org_id) ? list.last_org_id : list.workspaces[0]?.id;
+    // Older alert emails linked to /portal#alerts
+    const section = location.hash === '#alerts' ? '/alerts' : '';
+    if (org) location.replace(`/portal/${encodeURIComponent(org)}${section}`);
+    else showLogin();
   }
-
-  async function errorText(res: Response | null, fallback: string) {
-    if (!res) return 'Could not reach the server';
-    const body = await res.json().catch(() => ({}));
-    if (typeof body.detail === 'string') return body.detail;
-    if (Array.isArray(body.detail)) return body.detail[0]?.msg ?? fallback;
-    return fallback;
-  }
-
-  const STATUS = {
-    up: { label: 'Up', dot: 'bg-emerald-500', text: 'text-emerald-700' },
-    down: { label: 'Down', dot: 'bg-red-500', text: 'text-red-600' },
-    pending: { label: 'Checking…', dot: 'bg-fg/30', text: 'text-fg/60' },
-    paused: { label: 'Paused', dot: 'bg-fg/30', text: 'text-fg/60' },
-  };
-
-  function renderMonitor(m: Monitor) {
-    const st = STATUS[m.status];
-    const bars = m.recent.length
-      ? m.recent
-          .map(
-            (c) =>
-              `<span class="h-6 flex-1 rounded-[2px] ${c.ok ? 'bg-emerald-500/80' : 'bg-red-500/80'}" title="${esc(
-                new Date(c.at).toLocaleString(),
-              )} · ${c.ok ? esc(c.ms) + ' ms' : esc(c.error)}"></span>`,
-          )
-          .join('')
-      : '<span class="text-caption text-fg/45">No checks yet</span>';
-    const detail =
-      m.status === 'down'
-        ? `${esc(m.last_error)} · down since ${esc(ago(m.down_since))}`
-        : m.last_response_ms != null
-          ? `HTTP ${esc(m.last_status_code)} · ${esc(m.last_response_ms)} ms`
-          : esc(m.last_error ?? '');
-    const ssl =
-      m.ssl_days_left == null
-        ? ''
-        : `<span class="${m.ssl_warning ? 'font-medium text-amber-700' : ''}">SSL ${m.ssl_days_left < 0 ? 'expired' : `${esc(m.ssl_days_left)} days left`}</span>`;
-    return `
-      <article class="rounded-2xl p-5 ring-1 ring-fg/[0.08]" data-id="${esc(m.id)}">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-          <div class="min-w-0">
-            <div class="flex items-center gap-2.5">
-              <span class="h-2.5 w-2.5 shrink-0 rounded-full ${st.dot}"></span>
-              <h3 class="truncate text-body font-medium">${esc(m.name)}</h3>
-              <span class="text-caption font-medium ${st.text}">${st.label}</span>
-            </div>
-            <a href="${esc(m.url)}" target="_blank" rel="noopener noreferrer" class="mt-1 block truncate text-caption text-fg/55 hover:underline">${esc(m.url)}</a>
-          </div>
-          ${
-            canWrite()
-              ? `<div class="flex shrink-0 gap-2">
-            <button data-action="check" class="btn-secondary h-[30px] px-3 text-[12px]" ${m.is_active ? '' : 'disabled'}>Check now</button>
-            <button data-action="toggle" class="btn-secondary h-[30px] px-3 text-[12px]">${m.is_active ? 'Pause' : 'Resume'}</button>
-            <button data-action="delete" class="btn-secondary h-[30px] px-3 text-[12px] text-red-600">Delete</button>
-          </div>`
-              : ''
-          }
-        </div>
-        <div class="mt-4 flex items-end gap-[2px]" aria-label="Recent checks">${bars}</div>
-        <div class="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-caption text-fg/60">
-          <span>${detail}</span>
-          <span>Uptime 24h: <span class="font-medium text-fg">${m.uptime_24h == null ? '–' : esc(m.uptime_24h) + '%'}</span></span>
-          ${ssl}
-          <span>Every ${esc(m.interval_minutes)} min · checked ${esc(ago(m.last_checked_at))}</span>
-        </div>
-      </article>`;
-  }
-
-  let monitors: Monitor[] = [];
-
-  function renderMonitors(limit?: number) {
-    if (limit != null) $('mon-count').textContent = `· ${monitors.length} of ${limit}`;
-    $('mon-form').classList.toggle('hidden', !canWrite());
-    const empty = canWrite() ? 'Add your first URL above to start monitoring.' : 'No monitors in this workspace yet.';
-    $('mon-list').innerHTML = monitors.length
-      ? monitors.map(renderMonitor).join('')
-      : `<p class="rounded-2xl px-5 py-8 text-center text-caption text-fg/50 ring-1 ring-dashed ring-fg/10">${empty}</p>`;
-  }
-
-  let limit = 10;
-
-  // --- Workspaces -----------------------------------------------------------
-  type Workspace = { id: string; name: string; role: 'owner' | 'admin' | 'member' | 'viewer' };
-  let workspaces: Workspace[] = [];
-  let orgId = '';
-  let role: Workspace['role'] = 'viewer';
-  const canWrite = () => role !== 'viewer';
-  const monUrl = (path = '') => `/api/orgs/${encodeURIComponent(orgId)}/uptime/monitors${path}`;
-
-  function showWsError(msg: string | null) {
-    $('ws-error').textContent = msg ?? '';
-    $('ws-error').classList.toggle('hidden', !msg);
-  }
-
-  function useWorkspace(id: string) {
-    const ws = workspaces.find((w) => w.id === id) ?? workspaces[0];
-    orgId = ws.id;
-    role = ws.role;
-    ($('ws-select') as HTMLSelectElement).value = orgId;
-    $('ws-role').textContent = role;
-    // Owners and admins manage the workspace on its own page; others can only leave
-    const manage = role === 'owner' || role === 'admin';
-    ($('ws-manage') as HTMLAnchorElement).href = `/portal/workspace?org=${encodeURIComponent(orgId)}`;
-    $('ws-manage').classList.toggle('hidden', !manage);
-    $('ws-leave').classList.toggle('hidden', manage);
-  }
-
-  $('ws-leave').addEventListener('click', async () => {
-    const ws = workspaces.find((w) => w.id === orgId);
-    const me = await api('/api/auth/me').then((r) => r.json()).catch(() => null);
-    if (!ws || !me || !confirm(`Leave ${ws.name}? You will lose access to its monitors.`)) return;
-    showWsError(null);
-    const res = await api(`/api/orgs/${encodeURIComponent(orgId)}/members/${encodeURIComponent(me.sub)}`, {
-      method: 'DELETE',
-    }).catch(() => null);
-    if (!res?.ok) return showWsError(await errorText(res, 'Could not leave the workspace'));
-    await loadWorkspaces();
-    monitors = [];
-    await Promise.all([loadMonitors(), loadAlerts()]);
-  });
-
-  async function loadWorkspaces(preferId?: string) {
-    const res = await api('/api/orgs');
-    if (!res.ok) throw new Error('workspaces');
-    const data = await res.json();
-    workspaces = data.workspaces;
-    ($('ws-select') as HTMLSelectElement).innerHTML = workspaces
-      .map((w) => `<option value="${esc(w.id)}">${esc(w.name)}</option>`)
-      .join('');
-    useWorkspace(preferId ?? data.last_org_id);
-  }
-
-  $('ws-select').addEventListener('change', async (e) => {
-    showWsError(null);
-    useWorkspace((e.target as HTMLSelectElement).value);
-    monitors = [];
-    renderMonitors();
-    api(`/api/orgs/${encodeURIComponent(orgId)}/select`, { method: 'POST' }).catch(() => {});
-    await Promise.all([loadMonitors(), loadAlerts()]);
-  });
-
-  $('ws-new').addEventListener('click', async () => {
-    const name = prompt('Name of the new workspace, e.g. your company or project')?.trim();
-    if (!name) return;
-    showWsError(null);
-    const res = await api('/api/orgs', { method: 'POST', body: JSON.stringify({ name }) }).catch(() => null);
-    if (!res?.ok) return showWsError(await errorText(res, 'Could not create the workspace'));
-    const created = await res.json();
-    await loadWorkspaces(created.id);
-    monitors = [];
-    await Promise.all([loadMonitors(), loadAlerts()]);
-  });
-
-  // --- Email alerts -------------------------------------------------------------
-  type AlertPref = { event_key: string; app_name: string; label: string; email: boolean };
-
-  function alertMsg(text: string | null, ok = false) {
-    const el = $('alert-msg');
-    el.textContent = text ?? '';
-    el.classList.toggle('hidden', !text);
-    el.classList.toggle('text-red-600', !ok);
-    el.classList.toggle('text-emerald-700', ok);
-  }
-
-  function renderAlerts(prefs: AlertPref[]) {
-    $('alert-list').innerHTML = prefs
-      .map(
-        (p) => `
-        <li class="flex items-center justify-between gap-4 px-4 py-3">
-          <div class="min-w-0">
-            <p class="text-body">${esc(p.label)}</p>
-            <p class="text-caption text-fg/55">${esc(p.app_name)}</p>
-          </div>
-          <button data-alert="${esc(p.event_key)}" data-on="${p.email}" role="switch" aria-checked="${p.email}"
-            aria-label="${esc(p.label)}"
-            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${p.email ? 'bg-brand' : 'bg-fg/15'}">
-            <span class="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${p.email ? 'translate-x-[22px]' : 'translate-x-[2px]'}"></span>
-          </button>
-        </li>`,
-      )
-      .join('');
-  }
-
-  async function loadAlerts() {
-    const forOrg = orgId;
-    const res = await api(`/api/orgs/${encodeURIComponent(orgId)}/notifications`).catch(() => null);
-    if (!res?.ok || forOrg !== orgId) return;
-    renderAlerts(await res.json());
-  }
-
-  $('alert-list').addEventListener('click', async (e) => {
-    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-alert]');
-    if (!btn || btn.disabled) return;
-    btn.disabled = true;
-    alertMsg(null);
-    const on = btn.dataset.on !== 'true';
-    const res = await api(`/api/orgs/${encodeURIComponent(orgId)}/notifications`, {
-      method: 'PUT',
-      body: JSON.stringify({ events: { [btn.dataset.alert!]: on } }),
-    }).catch(() => null);
-    if (!res?.ok) {
-      btn.disabled = false;
-      return alertMsg(await errorText(res, 'Could not save your alert settings'));
-    }
-    renderAlerts(await res.json());
-    alertMsg(on ? 'You will receive this alert.' : 'You will no longer receive this alert.', true);
-  });
-
-  async function loadMonitors() {
-    const forOrg = orgId;
-    const res = await api(monUrl()).catch(() => null);
-    // Ignore a slow response for a workspace the user has already switched away from
-    if (!res?.ok || forOrg !== orgId) return;
-    const data = await res.json();
-    monitors = data.monitors;
-    limit = data.limit;
-    // Intervals depend on the workspace's tier: Pro-only ones are listed but disabled
-    const select = document.querySelector<HTMLSelectElement>('#mon-form select')!;
-    const previous = Number(select.value) || 5;
-    const all = [...data.locked_intervals, ...data.intervals].sort((a: number, b: number) => a - b);
-    const chosen = data.intervals.includes(previous) ? previous : data.intervals[0];
-    select.innerHTML = all
-      .map((n: number) => {
-        const locked = data.locked_intervals.includes(n);
-        return `<option value="${n}" ${locked ? 'disabled' : ''} ${n === chosen ? 'selected' : ''}>Every ${n} min${locked ? ' (Pro)' : ''}</option>`;
-      })
-      .join('');
-
-    const pro = data.tier === 'pro';
-    const badge = $('mon-plan');
-    badge.textContent = pro ? 'PRO' : 'FREE';
-    badge.className = `ml-2 rounded-full px-2 py-0.5 align-middle text-[10px] tracking-[0.1em] ${
-      pro ? 'bg-brand/15 text-brand' : 'bg-fg/[0.06] text-fg/60'
-    }`;
-    const note = $('mon-plan-note');
-    note.textContent = pro
-      ? `Pro: up to ${data.limit} monitors, checks every minute, ${data.history_days} days of history.`
-      : `Free: up to ${data.limit} monitors, checks every ${data.intervals[0]} minutes or more, ${data.history_days} days of history. ` +
-        'Contact CloudMindra to upgrade to Pro for 1-minute checks and more monitors.';
-    note.classList.remove('hidden');
-    renderMonitors(limit);
-  }
-
-  function showMonError(msg: string | null) {
-    const el = $('mon-error');
-    el.textContent = msg ?? '';
-    el.classList.toggle('hidden', !msg);
-  }
-
-  $('mon-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const form = e.currentTarget as HTMLFormElement;
-    const btn = form.querySelector('button')!;
-    const data = new FormData(form);
-    btn.disabled = true;
-    btn.textContent = 'Checking…';
-    showMonError(null);
-    const res = await api(monUrl(), {
-      method: 'POST',
-      body: JSON.stringify({
-        name: data.get('name'),
-        url: data.get('url'),
-        interval_minutes: Number(data.get('interval')),
-      }),
-    }).catch(() => null);
-    btn.disabled = false;
-    btn.textContent = 'Add monitor';
-    if (!res?.ok) return showMonError(await errorText(res, 'Could not add monitor'));
-    (form.elements.namedItem('name') as HTMLInputElement).value = '';
-    (form.elements.namedItem('url') as HTMLInputElement).value = '';
-    monitors.push(await res.json());
-    renderMonitors(limit);
-  });
-
-  $('mon-list').addEventListener('click', async (e) => {
-    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-action]');
-    const card = btn?.closest<HTMLElement>('[data-id]');
-    if (!btn || !card || btn.disabled) return;
-    const id = card.dataset.id!;
-    const m = monitors.find((x) => x.id === id)!;
-    const action = btn.dataset.action;
-    showMonError(null);
-
-    if (action === 'delete' && !confirm(`Stop monitoring ${m.name}? Its check history will be deleted.`)) return;
-    btn.disabled = true;
-
-    let res: Response | null = null;
-    if (action === 'check') res = await api(monUrl(`/${id}/check`), { method: 'POST' }).catch(() => null);
-    if (action === 'toggle')
-      res = await api(monUrl(`/${id}`), { method: 'PATCH', body: JSON.stringify({ is_active: !m.is_active }) }).catch(() => null);
-    if (action === 'delete') res = await api(monUrl(`/${id}`), { method: 'DELETE' }).catch(() => null);
-
-    if (!res?.ok) {
-      btn.disabled = false;
-      return showMonError(await errorText(res, 'Something went wrong'));
-    }
-    if (action === 'delete') monitors = monitors.filter((x) => x.id !== id);
-    else {
-      const updated = await res.json();
-      monitors = monitors.map((x) => (x.id === id ? updated : x));
-    }
-    renderMonitors(limit);
-  });
-
-  async function init() {
-    const error = new URLSearchParams(location.search).get('error');
-    if (error) {
-      const el = $('login-error');
-      el.textContent = ERRORS[error] ?? ERRORS.failed;
-      el.classList.remove('hidden');
-      history.replaceState(null, '', location.pathname);
-    }
-
-    try {
-      const res = await api('/api/auth/me');
-      if (!res.ok) return show('login');
-      const user = await res.json();
-      $('user-name').textContent = user.name || user.email;
-      $('user-email').textContent = user.email;
-      $('user-provider').textContent = user.provider;
-      $('admin-link').classList.toggle('hidden', !user.is_admin);
-      show('account');
-      await loadWorkspaces();
-      await Promise.all([loadMonitors(), loadAlerts()]);
-      // Keep statuses fresh while the page is open
-      setInterval(() => document.visibilityState === 'visible' && loadMonitors(), 60_000);
-    } catch {
-      show('login');
-    }
-  }
-
-  init();
 </script>

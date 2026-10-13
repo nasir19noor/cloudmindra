@@ -1,0 +1,50 @@
+---
+// Shell for /portal/{org}/… pages (DESIGN.md §11). The page's own <script> calls
+// bootPortal() from src/lib/shell.ts, which fills the top bar and sidebar.
+import Layout from './Layout.astro';
+
+interface Props {
+  title: string;
+  org: string;
+  section: string; // '' (overview), 'uptime', 'alerts', 'settings', or a module key
+}
+
+const { title, org, section } = Astro.props;
+const API_URL = import.meta.env.PUBLIC_API_URL || 'https://api.cloudmindra.com';
+---
+
+<Layout title={title} description="CloudMindra client portal">
+  <section id="portal-shell" class="px-4 pb-24 pt-28 md:px-6" data-api={API_URL} data-org={org} data-section={section}>
+    <p id="shell-loading" class="text-center text-body text-fg/60">Loading…</p>
+
+    <div id="shell-missing" class="card mx-auto hidden max-w-[460px] space-y-4 p-8">
+      <p class="eyebrow">Workspace not found</p>
+      <p class="text-body text-fg/70">This workspace doesn't exist or you are not a member of it.</p>
+      <a href="/portal" class="btn-secondary h-[40px] w-full">Go to my workspace</a>
+    </div>
+
+    <div id="shell-app" class="mx-auto hidden max-w-[1200px]">
+      <!-- Top bar -->
+      <div class="flex flex-wrap items-center gap-3 rounded-2xl bg-surface px-4 py-3 ring-1 ring-fg/[0.06]">
+        <label for="shell-ws" class="sr-only">Workspace</label>
+        <select id="shell-ws" class="field h-[38px] w-auto min-w-[200px] max-w-[320px] py-0 font-medium"></select>
+        <span id="shell-role" class="rounded-full bg-fg/[0.06] px-3 py-1 text-[12px] font-medium text-fg/70"></span>
+        <button id="shell-new" type="button" class="btn-secondary h-[34px] px-4 text-[12px]">New workspace</button>
+        <button id="shell-leave" type="button" class="btn-secondary hidden h-[34px] px-4 text-[12px]">Leave</button>
+        <div class="ml-auto flex items-center gap-3">
+          <span id="shell-user" class="hidden truncate text-caption text-fg/60 sm:inline"></span>
+          <a id="shell-admin" href="/admin" class="btn-secondary hidden h-[34px] px-4 text-[12px]">Platform admin</a>
+          <a href={`${API_URL}/api/auth/logout`} class="btn-secondary h-[34px] px-4 text-[12px]">Sign out</a>
+        </div>
+      </div>
+      <p id="shell-error" class="mt-2 hidden text-caption text-red-600" role="alert"></p>
+
+      <div class="mt-4 grid gap-4 md:grid-cols-[230px_1fr]">
+        <nav id="shell-nav" aria-label="Workspace" class="card h-max space-y-0.5 p-3 md:sticky md:top-28"></nav>
+        <div class="min-w-0">
+          <slot />
+        </div>
+      </div>
+    </div>
+  </section>
+</Layout>
