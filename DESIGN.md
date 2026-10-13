@@ -62,6 +62,8 @@ CloudMindra sells cloud and AI consulting. The platform adds self-service **modu
 
 `.env` changes: edit locally → `app/backend/upload.sh` → redeploy. `.env` is gitignored.
 
+**Database migrations on deploy:** the backend container runs `python migrate.py` before uvicorn. It stamps a pre-Alembic database at `0001`, runs `alembic upgrade head` (as `DATABASE_MIGRATION_URL` or `DATABASE_URL`), then grants each existing module role (`core_svc`, `uptime_svc`, `site_svc`) access to its own schema. Take a `pg_dump` before deploying a new migration. Module roles are optional: create them once with `app/backend/db/roles.sql` and set `DATABASE_URL_CORE/UPTIME/SITE`; without them every schema uses `DATABASE_URL`.
+
 ### 2.2 Containers
 | Container | Command | Responsibility |
 |---|---|---|
@@ -83,7 +85,7 @@ Until phase 3 the uptime loop runs inside the API process (`MONITOR_WORKER=true`
 
 ---
 
-## 4. Multi-tenancy 🔜
+## 4. Multi-tenancy 🚧 (workspaces, roles, `org_access` built; invitations/team UI in phase 4)
 
 **Model:** shared database and tables; every tenant-owned row has `org_id`. UI term: **Workspace** (code: `organization`).
 
@@ -287,7 +289,7 @@ Only `aws` (and `fake` for tests) is implemented. Modules declare supported prov
 - `0004` platform tables + outbox per schema; every workspace gets every module on `free`.
 - `0005` cloud tables when the first AWS module lands.
 
-The container runs `alembic upgrade head` (as `migrator`) before start; take a `pg_dump` before each migration deploy. Until phase 1 `init_db()` uses `create_all` plus guarded `ALTER TABLE`.
+The container runs `migrate.py` (see §2.1) before start; take a `pg_dump` before each migration deploy. 🚧 `0001`–`0003` are built; `create_all` is no longer used. Models use the index naming convention `ix_<table>_<column>` (no schema prefix) so autogenerate matches the migrations.
 
 ---
 
@@ -297,8 +299,8 @@ The container runs `alembic upgrade head` (as `migrator`) before start; take a `
 |---|---|
 | Auth ✅ | `GET /api/auth/login`, `/callback`, `/logout`, `/me` |
 | Platform admin ✅ | `/api/admin/me`, `/analytics`, `/users`, `PUT /users/{id}` (is_admin), `POST /logout` |
-| Uptime ✅ (moves to `/api/orgs/{org}/uptime/…`) | `GET/POST /api/monitors`, `PATCH/DELETE /api/monitors/{id}`, `POST /{id}/check`, `GET /{id}/checks` |
-| Workspaces 🔜 | `GET/POST /api/orgs`, `PATCH/DELETE /api/orgs/{org}` |
+| Uptime 🚧 | `GET/POST /api/orgs/{org}/uptime/monitors`, `PATCH/DELETE …/monitors/{id}`, `POST …/{id}/check`, `GET …/{id}/checks` (read: `uptime.read`, write: `uptime.write`) |
+| Workspaces 🚧 | `GET/POST /api/orgs`, `GET/PATCH/DELETE /api/orgs/{org}` (name, currency), `POST /api/orgs/{org}/select` (remember last workspace) |
 | Team 🔜 | `/api/orgs/{org}/members[/{user}]`, `/api/orgs/{org}/invitations[/{id}]`, `POST /api/invitations/accept` |
 | Platform 🔜 | `/api/orgs/{org}/jobs/{id}`, `/reports[/{id}/download]`, `/connections[/{id}]`, `/activity` |
 | Modules 🔜 | `/api/orgs/{org}/{app_key}/…` |
@@ -339,7 +341,7 @@ The sidebar is built from `GET /api/orgs/{org}` (`role`, modules with tier/limit
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | Cognito + Google login, portal, admin via `is_admin`/`ADMIN_EMAIL`, uptime monitor (per user) | ✅/🚧 |
-| 1 | Alembic, Postgres schemas + roles per module (move existing tables, drop cross-schema FKs), workspaces, memberships, backfill, `org_access` | 🔜 |
+| 1 | Alembic, Postgres schemas + roles per module (move existing tables, drop cross-schema FKs), workspaces, memberships, backfill, `org_access`; uptime API scoped to workspaces; portal workspace switcher | 🚧 |
 | 2 | Catalog, Free/Pro per module, `org_apps`, limits & usage, isolation test | 🔜 |
 | 3 | `core/` + `apps/` layout, engine per module role, worker container, job queue, outbox per schema + relay, uptime moved, notify, audit, module summary APIs | 🔜 |
 | 4 | Team: invitations, roles, alert prefs, member caps, 2-free-workspace limit | 🔜 |

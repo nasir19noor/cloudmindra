@@ -13,6 +13,7 @@ import httpx
 
 from database import SessionLocal
 from mailer import send_alert_email
+from orgs import ORG_DELETE_HOOKS, alert_recipients
 import db_models
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,7 @@ MAX_CONCURRENT_CHECKS = 20
 USER_AGENT = "CloudMindra-Uptime/1.0 (+https://cloudmindra.com)"
 
 
-def max_monitors_per_user() -> int:
+def max_monitors_per_workspace() -> int:
     return int(os.getenv("MONITOR_LIMIT", "10"))
 
 
@@ -144,13 +145,13 @@ def _portal_link() -> str:
 
 def record_result(monitor_id: str, result: dict, ssl_expires: datetime | None, ssl_checked: bool) -> None:
     """Store one check, move the monitor between up/down, and email on changes."""
-    alerts: list[tuple[str, str, str]] = []
+    alerts: list[tuple[str, str]] = []  # (subject, body)
     db = SessionLocal()
     try:
         m = db.get(db_models.Monitor, monitor_id)
         if m is None:  # deleted while the check was running
             return
-        owner = db.get(db_models.User, m.user_id)
+        recipients = alert_recipients(db, m.org_id)
         now = utcnow()
 
         db.add(db_models.MonitorCheck(monitor_id=m.id, checked_at=now, ok=result["ok"],
@@ -162,9 +163,9 @@ def record_result(monitor_id: str, result: dict, ssl_expires: datetime | None, s
         m.last_error = result["error"]
 
         if result["ok"]:
-            if m.status == "down" and owner:
+            if m.status == "down":
                 downtime = _fmt_duration(now - aware(m.down_since)) if m.down_since else "a while"
-                alerts.append((owner.email, f"✅ {m.name} is back up",
+                alerts.append((f"✅ {m.name} is back up",
                                f"{m.name} ({m.url}) is responding again after {downtime} of downtime.\n\n"
                                f"Status: HTTP {result['status_code']} in {result['response_ms']} ms\n\n{_portal_link()}\n"))
             m.status = "up"
@@ -175,30 +176,30 @@ def record_result(monitor_id: str, result: dict, ssl_expires: datetime | None, s
             if m.consecutive_failures >= FAILURES_BEFORE_DOWN and m.status != "down":
                 m.status = "down"
                 m.down_since = now
-                if owner:
-                    alerts.append((owner.email, f"🔴 {m.name} is down",
-                                   f"{m.name} ({m.url}) failed {m.consecutive_failures} checks in a row.\n\n"
-                                   f"Error: {result['error']}\n"
-                                   f"Detected: {now:%Y-%m-%d %H:%M} UTC\n\n"
-                                   f"We'll email you again when it recovers.\n\n{_portal_link()}\n"))
+                alerts.append((f"🔴 {m.name} is down",
+                               f"{m.name} ({m.url}) failed {m.consecutive_failures} checks in a row.\n\n"
+                               f"Error: {result['error']}\n"
+                               f"Detected: {now:%Y-%m-%d %H:%M} UTC\n\n"
+                               f"We'll email you again when it recovers.\n\n{_portal_link()}\n"))
 
         if ssl_checked:
             m.ssl_checked_at = now
             m.ssl_expires_at = ssl_expires
-            if ssl_expires and owner:
+            if ssl_expires:
                 days_left = (ssl_expires - now).days
                 already_warned = aware(m.ssl_alerted_for) == ssl_expires
                 if days_left <= SSL_WARN_DAYS and not already_warned:
                     m.ssl_alerted_for = ssl_expires
-                    alerts.append((owner.email, f"⚠️ SSL certificate for {m.name} expires in {max(days_left, 0)} days",
+                    alerts.append((f"⚠️ SSL certificate for {m.name} expires in {max(days_left, 0)} days",
                                    f"The SSL certificate for {m.url} expires on {ssl_expires:%Y-%m-%d}.\n\n"
                                    f"Renew it before then to avoid browser security warnings.\n\n{_portal_link()}\n"))
         db.commit()
     finally:
         db.close()
 
-    for to, subject, body in alerts:
-        send_alert_email(to, subject, body)
+    for subject, body in alerts:
+        for to in recipients:
+            send_alert_email(to, subject, body)
 
 
 async def run_check(monitor_id: str, url: str, ssl_due: bool) -> None:
@@ -226,6 +227,18 @@ def _due_monitors() -> list[tuple[str, str, bool]]:
         return due
     finally:
         db.close()
+
+
+def delete_org_monitors(db, org_id: str) -> None:
+    """Remove a deleted workspace's monitors and history. Registered in ORG_DELETE_HOOKS;
+    becomes an org.deleted event handler in phase 3."""
+    ids = [m_id for (m_id,) in db.query(db_models.Monitor.id).filter(db_models.Monitor.org_id == org_id)]
+    if ids:
+        db.query(db_models.MonitorCheck).filter(db_models.MonitorCheck.monitor_id.in_(ids)).delete(synchronize_session=False)
+        db.query(db_models.Monitor).filter(db_models.Monitor.id.in_(ids)).delete(synchronize_session=False)
+
+
+ORG_DELETE_HOOKS.append(delete_org_monitors)
 
 
 def _prune_old_checks() -> None:

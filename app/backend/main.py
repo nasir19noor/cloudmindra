@@ -7,7 +7,7 @@ import os
 
 from database import init_db
 import monitoring
-from routers import contact, services, blog, analytics, admin, auth, monitors
+from routers import contact, services, blog, analytics, admin, auth, monitors, orgs
 
 app = FastAPI(
     title="CloudMindra API",
@@ -48,6 +48,7 @@ app.include_router(blog.router)
 app.include_router(analytics.router)
 app.include_router(admin.router)
 app.include_router(auth.router)
+app.include_router(orgs.router)
 app.include_router(monitors.router)
 
 if __name__ == "__main__":

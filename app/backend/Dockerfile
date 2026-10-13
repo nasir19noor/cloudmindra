@@ -14,4 +14,5 @@ USER app
 
 EXPOSE 11001
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "11001"]
+# Migrate first (stamps the pre-Alembic database on its first run), then serve
+CMD ["sh", "-c", "python migrate.py && exec uvicorn main:app --host 0.0.0.0 --port 11001"]
