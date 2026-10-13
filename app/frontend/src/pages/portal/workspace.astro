@@ -341,6 +341,7 @@ const CURRENCIES = ['USD', 'IDR', 'SGD', 'MYR', 'EUR', 'GBP', 'AUD', 'JPY'];
       case 'uptime.monitor.created': return `added the monitor "${d.name}" (${d.url})`;
       case 'uptime.monitor.updated': return `updated a monitor: ${Object.keys(d).map((k) => `${k} ${pair(k)}`).join(', ')}`;
       case 'uptime.monitor.deleted': return `deleted the monitor "${d.name}"`;
+      case 'notifications.updated': return 'changed their email alert settings';
       default: return e.action;
     }
   }

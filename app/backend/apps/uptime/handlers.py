@@ -12,9 +12,9 @@ from apps.uptime import models as db_models
 
 @subscribe("uptime.down", "uptime.recovered", "uptime.ssl_expiring", name="uptime.alert_members")
 def alert_members(db: Session, event: dict) -> None:
-    """Email the workspace's members. A failed send raises, so the job is retried."""
+    """Email the members who want this alert (one retried job per recipient)."""
     p = event["payload"]
-    notify(db, event["org_id"], event["type"], p["subject"], p["body"])
+    notify(db, event["org_id"], event["type"], p["subject"], p["body"], dedupe=event["id"])
 
 
 @subscribe("org.deleted", name="uptime.delete_workspace_data")

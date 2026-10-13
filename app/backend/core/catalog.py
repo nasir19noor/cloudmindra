@@ -77,6 +77,13 @@ WORKSPACE_SEATS = {"free": 3, "pro": 10}
 # Workspaces a user may own that have no Pro module (DESIGN.md §4.1)
 FREE_WORKSPACES_PER_USER = 2
 
+# Email alerts a member can switch on/off per workspace (core.notification_prefs; no row = on)
+NOTIFICATION_EVENTS: dict[str, dict[str, str]] = {
+    "uptime.down": {"app": "uptime", "label": "A monitor goes down"},
+    "uptime.recovered": {"app": "uptime", "label": "A monitor is back up"},
+    "uptime.ssl_expiring": {"app": "uptime", "label": "An SSL certificate expires within 14 days"},
+}
+
 LABELS = {
     "uptime.monitors": "monitors",
     "uptime.min_interval": "minutes between checks (minimum)",
