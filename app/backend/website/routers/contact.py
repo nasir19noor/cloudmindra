@@ -3,11 +3,11 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 import uuid
 
-from auth import require_admin
-from database import get_db
-from models import ContactRequest, ContactResponse
-import db_models
-from mailer import send_contact_email
+from core.auth import require_admin
+from core.database import get_db
+from website.schemas import ContactRequest, ContactResponse
+from website import models as db_models
+from core.mailer import send_contact_email
 
 router = APIRouter(prefix="/api/contact", tags=["contact"])
 

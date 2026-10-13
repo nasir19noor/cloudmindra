@@ -17,6 +17,10 @@ def _clean_header(value: str) -> str:
     return " ".join(value.splitlines()).strip()
 
 
+def smtp_configured() -> bool:
+    return bool(os.getenv("SMTP_HOST") and os.getenv("SMTP_USERNAME") and os.getenv("SMTP_PASSWORD"))
+
+
 def _send(msg: EmailMessage) -> bool:
     """Send a message through Amazon SES SMTP. Returns False when SMTP is not configured or fails."""
     host = os.getenv("SMTP_HOST")

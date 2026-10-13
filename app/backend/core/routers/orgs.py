@@ -1,15 +1,17 @@
 import re
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from cognito_auth import require_user
-from database import get_db
-from entitlements import free_workspace_limit, modules_overview, owned_free_workspace_count
-from orgs import OrgContext, create_workspace, delete_workspace, org_access
-import db_models
-
+from core.auth import require_user
+from core.database import get_db
+from core.entitlements import free_workspace_limit, modules_overview, owned_free_workspace_count
+from core.audit import audit, audit_ctx, event_out
+from core.auth import client_ip
+from core.jobs import job_out
+from core.orgs import OrgContext, create_workspace, delete_workspace, org_access
+from core import models as db_models
 router = APIRouter(prefix="/api/orgs", tags=["workspaces"])
 
 CURRENCY = re.compile(r"^[A-Z]{3}$")
@@ -60,7 +62,7 @@ def list_workspaces(user: dict = Depends(require_user), db: Session = Depends(ge
 
 
 @router.post("", status_code=201)
-def create(payload: WorkspaceCreate, user: dict = Depends(require_user), db: Session = Depends(get_db)):
+def create(payload: WorkspaceCreate, request: Request, user: dict = Depends(require_user), db: Session = Depends(get_db)):
     me = _current_user(db, user)
     # Only workspaces with no Pro module count (DESIGN.md §4.1)
     limit = free_workspace_limit()
@@ -69,6 +71,8 @@ def create(payload: WorkspaceCreate, user: dict = Depends(require_user), db: Ses
                                                     "Upgrade one of them, or contact CloudMindra.")
     org = create_workspace(db, me.id, payload.name)
     me.last_org_id = org.id
+    audit(db, "org.created", org_id=org.id, actor_id=me.id, actor_email=me.email, target_id=org.id,
+          metadata={"name": org.name}, ip=client_ip(request))
     db.commit()
     return _workspace_out(org, "owner", member_count=1)
 
@@ -90,13 +94,19 @@ def workspace_modules(ctx: OrgContext = Depends(org_access("org.read")), db: Ses
 def update_workspace(payload: WorkspaceUpdate, ctx: OrgContext = Depends(org_access("org.update")),
                      db: Session = Depends(get_db)):
     org = db.get(db_models.Organization, ctx.org_id)
-    if payload.name is not None:
+    changes = {}
+    if payload.name is not None and payload.name.strip() != org.name:
+        changes["name"] = [org.name, payload.name.strip()]
         org.name = payload.name.strip()
     if payload.currency is not None:
         currency = payload.currency.strip().upper()
         if not CURRENCY.match(currency):
             raise HTTPException(status_code=422, detail="Currency must be a 3-letter ISO code, e.g. USD or IDR")
+        if currency != org.currency:
+            changes["currency"] = [org.currency, currency]
         org.currency = currency
+    if changes:
+        audit_ctx(db, ctx, "org.updated", target_id=org.id, metadata=changes)
     db.commit()
     return _workspace_out(org, ctx.role)
 
@@ -106,6 +116,8 @@ def remove_workspace(ctx: OrgContext = Depends(org_access("org.delete")), db: Se
     mine = db.query(db_models.Membership).filter(db_models.Membership.user_id == ctx.user_id).count()
     if mine <= 1:
         raise HTTPException(status_code=400, detail="You cannot delete your only workspace")
+    org = db.get(db_models.Organization, ctx.org_id)
+    audit_ctx(db, ctx, "org.deleted", target_id=ctx.org_id, metadata={"name": org.name})
     delete_workspace(db, ctx.org_id)
     db.commit()
 
@@ -117,3 +129,22 @@ def select_workspace(ctx: OrgContext = Depends(org_access("org.read")), db: Sess
     me.last_org_id = ctx.org_id
     db.commit()
     return {"last_org_id": ctx.org_id}
+
+
+@router.get("/{org_id}/activity")
+def workspace_activity(limit: int = 100, ctx: OrgContext = Depends(org_access("audit.view")),
+                       db: Session = Depends(get_db)):
+    """Audit log for owners and admins (audit.view is not covered by viewers' "*.read")."""
+    rows = (db.query(db_models.AuditEvent).filter(db_models.AuditEvent.org_id == ctx.org_id)
+            .order_by(db_models.AuditEvent.created_at.desc(), db_models.AuditEvent.id.desc())
+            .limit(max(1, min(limit, 500))).all())
+    return [event_out(e) for e in rows]
+
+
+@router.get("/{org_id}/jobs/{job_id}")
+def job_status(job_id: str, ctx: OrgContext = Depends(org_access("org.read")), db: Session = Depends(get_db)):
+    """Progress of background work started in this workspace (DESIGN.md §7)."""
+    job = db.get(db_models.Job, job_id)
+    if job is None or job.org_id != ctx.org_id:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job_out(job)

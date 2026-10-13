@@ -13,19 +13,20 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from catalog import has_permission
-from cognito_auth import require_user
-from database import get_db
-from mailer import send_invitation_email
-from entitlements import seat_limit
-from orgs import OrgContext, ensure_workspace, org_access
-import db_models
-
+from core.catalog import has_permission
+from core.auth import require_user
+from core.database import get_db
+from core.mailer import send_invitation_email
+from core.audit import audit, audit_ctx
+from core.auth import client_ip
+from core.entitlements import seat_limit
+from core.orgs import OrgContext, ensure_workspace, org_access
+from core import models as db_models
 router = APIRouter(tags=["team"])
 
 INVITE_TTL = timedelta(days=7)
@@ -141,6 +142,8 @@ def invite(payload: InviteCreate, ctx: OrgContext = Depends(org_access("members.
         inv = db_models.Invitation(id=str(uuid.uuid4()), org_id=ctx.org_id, email=email, role=payload.role,
                                    token_hash=_hash(token), invited_by=ctx.user_id, expires_at=expires)
         db.add(inv)
+    audit_ctx(db, ctx, "member.invited", target_id=inv.id,
+              metadata={"email": email, "role": payload.role, "resent": existing is not None})
     db.commit()
 
     inviter = db.get(db_models.User, ctx.user_id)
@@ -159,6 +162,7 @@ def cancel_invitation(invitation_id: str, ctx: OrgContext = Depends(org_access("
     inv = db.get(db_models.Invitation, invitation_id)
     if inv is None or inv.org_id != ctx.org_id or inv.accepted_at is not None:
         raise HTTPException(status_code=404, detail="Invitation not found")
+    audit_ctx(db, ctx, "invitation.cancelled", target_id=inv.id, metadata={"email": inv.email})
     db.delete(inv)
     db.commit()
 
@@ -185,7 +189,7 @@ def preview(token: str, db: Session = Depends(get_db)):
 
 
 @router.post("/api/invitations/accept")
-def accept(payload: InviteAccept, user: dict = Depends(require_user), db: Session = Depends(get_db)):
+def accept(payload: InviteAccept, request: Request, user: dict = Depends(require_user), db: Session = Depends(get_db)):
     inv = _find_invitation(db, payload.token)
     if inv.accepted_at is not None:
         raise HTTPException(status_code=410, detail="This invitation has already been used")
@@ -204,6 +208,8 @@ def accept(payload: InviteAccept, user: dict = Depends(require_user), db: Sessio
         db.add(db_models.Membership(org_id=inv.org_id, user_id=me.id, role=inv.role))
     inv.accepted_at = _now()
     me.last_org_id = inv.org_id
+    audit(db, "member.joined", org_id=inv.org_id, actor_id=me.id, actor_email=me.email, target_id=me.id,
+          metadata={"role": membership.role if membership else inv.role, "invitation_id": inv.id}, ip=client_ip(request))
     db.commit()
     org = db.get(db_models.Organization, inv.org_id)
     return {"id": org.id, "name": org.name, "role": membership.role if membership else inv.role}
@@ -246,6 +252,8 @@ def change_role(user_id: str, payload: MemberUpdate, ctx: OrgContext = Depends(o
         raise HTTPException(status_code=403, detail="Only an owner can grant or remove the owner role")
     if m.role == "owner" and payload.role != "owner" and _owner_count(db, ctx.org_id) <= 1:
         raise HTTPException(status_code=400, detail="A workspace needs at least one owner. Make someone else owner first.")
+    if m.role != payload.role:
+        audit_ctx(db, ctx, "member.role_changed", target_id=user_id, metadata={"from": m.role, "to": payload.role})
     m.role = payload.role
     db.commit()
     return {"user_id": user_id, "role": m.role}
@@ -264,8 +272,10 @@ def remove_member(user_id: str, ctx: OrgContext = Depends(org_access("org.read")
         if _owner_count(db, ctx.org_id) <= 1:
             raise HTTPException(status_code=400, detail="A workspace needs at least one owner. "
                                                         "Make someone else owner first, or delete the workspace.")
-    db.delete(m)
     removed = db.get(db_models.User, user_id)
+    audit_ctx(db, ctx, "member.left" if leaving else "member.removed", target_id=user_id,
+              metadata={"email": removed.email, "role": m.role})
+    db.delete(m)
     db.flush()
     # Someone left with no workspace gets a fresh personal one, like on first login
     ensure_workspace(db, removed)

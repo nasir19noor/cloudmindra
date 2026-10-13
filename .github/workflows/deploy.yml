@@ -61,12 +61,12 @@ jobs:
         rm -f app/backend/.env
         aws s3 cp s3://cloudmindra.com/backend/.env app/backend/.env
 
-        echo "Building and starting backend..."
-        echo "$SSH_PASSWORD" | sudo -S docker compose -p cloudmindra up -d --build --remove-orphans backend
+        echo "Building and starting backend and worker..."
+        echo "$SSH_PASSWORD" | sudo -S docker compose -p cloudmindra up -d --build --remove-orphans backend worker
 
         echo "$SSH_PASSWORD" | sudo -S docker image prune -f
 
-        echo "Backend deployed successfully"
+        echo "Backend and worker deployed successfully"
 
   deploy-frontend:
     needs: [changes, deploy-backend]

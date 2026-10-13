@@ -8,13 +8,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from auth import require_admin
-from cognito_auth import SESSION_COOKIE, current_user
-from database import get_db
-from catalog import APPS, LIMITS, WORKSPACE_SEATS
-from entitlements import row_is_pro, seat_limit
-import db_models
-
+from core.audit import audit, event_out
+from core.auth import client_ip, require_admin
+from core.auth import SESSION_COOKIE, current_user
+from core.database import get_db
+from core.catalog import APPS, LIMITS, WORKSPACE_SEATS
+from core.entitlements import row_is_pro, seat_limit
+from core import models as db_models
+from website import models as site_models
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
@@ -58,7 +59,7 @@ async def update_user(
     payload: AdminUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    _: str = Depends(require_admin),
+    admin_email: str = Depends(require_admin),
 ):
     row = db.get(db_models.User, user_id)
     if row is None:
@@ -67,6 +68,9 @@ async def update_user(
     # Removing your own admin access would lock you out mid-session
     if me and me["sub"] == user_id and not payload.is_admin:
         raise HTTPException(status_code=400, detail="You cannot remove your own admin access")
+    if row.is_admin != payload.is_admin:
+        audit(db, "platform.admin_granted" if payload.is_admin else "platform.admin_revoked", actor_id=me and me["sub"],
+              actor_email=admin_email, target_id=user_id, metadata={"email": row.email}, ip=client_ip(request))
     row.is_admin = payload.is_admin
     db.commit()
     return _user_out(row, me and me["sub"])
@@ -144,11 +148,14 @@ async def list_workspaces(db: Session = Depends(get_db), _: str = Depends(requir
 
 
 @router.put("/orgs/{org_id}")
-async def update_workspace_seats(org_id: str, payload: SeatLimitUpdate, db: Session = Depends(get_db),
-                                 _: str = Depends(require_admin)):
+async def update_workspace_seats(org_id: str, payload: SeatLimitUpdate, request: Request, db: Session = Depends(get_db),
+                                 admin_email: str = Depends(require_admin)):
     org = db.get(db_models.Organization, org_id)
     if org is None:
         raise HTTPException(status_code=404, detail="Workspace not found")
+    if org.member_limit != payload.member_limit:
+        audit(db, "org.seat_limit_changed", org_id=org_id, actor_email=admin_email, target_id=org_id,
+              metadata={"from": org.member_limit, "to": payload.member_limit}, ip=client_ip(request))
     org.member_limit = payload.member_limit
     db.commit()
     members, pending, owners = _seat_counts(db)
@@ -157,8 +164,8 @@ async def update_workspace_seats(org_id: str, payload: SeatLimitUpdate, db: Sess
 
 
 @router.put("/orgs/{org_id}/modules/{app_key}")
-async def set_module_tier(org_id: str, app_key: str, payload: ModuleTierUpdate, admin_email: str = Depends(require_admin),
-                          db: Session = Depends(get_db)):
+async def set_module_tier(org_id: str, app_key: str, payload: ModuleTierUpdate, request: Request,
+                          admin_email: str = Depends(require_admin), db: Session = Depends(get_db)):
     """Switch a module between Free and Pro for one workspace (Pro is set by hand until billing exists)."""
     org = db.get(db_models.Organization, org_id)
     if org is None:
@@ -175,6 +182,10 @@ async def set_module_tier(org_id: str, app_key: str, payload: ModuleTierUpdate, 
     if row is None:
         row = db_models.OrgApp(org_id=org_id, app_key=app_key)
         db.add(row)
+    was = "pro" if row_is_pro(row) else "free"
+    audit(db, "module.tier_changed", org_id=org_id, actor_email=admin_email, app_key=app_key, target_id=org_id,
+          metadata={"from": was, "to": payload.tier, "pro_until": payload.pro_until.isoformat() if payload.pro_until else None,
+                    "limits": payload.limits}, ip=client_ip(request))
     if payload.tier == "pro" and not row_is_pro(row):
         row.pro_since = datetime.now(timezone.utc)
     row.tier = payload.tier
@@ -189,6 +200,17 @@ async def set_module_tier(org_id: str, app_key: str, payload: ModuleTierUpdate, 
                           _module_tiers(db)[org.id])
 
 
+@router.get("/activity")
+async def platform_activity(limit: int = 200, org_id: str | None = None, db: Session = Depends(get_db),
+                            _: str = Depends(require_admin)):
+    """Audit log across all workspaces (DESIGN.md §7), newest first; filter with ?org_id=."""
+    q = db.query(db_models.AuditEvent)
+    if org_id:
+        q = q.filter(db_models.AuditEvent.org_id == org_id)
+    rows = q.order_by(db_models.AuditEvent.created_at.desc(), db_models.AuditEvent.id.desc()).limit(max(1, min(limit, 1000)))
+    return [event_out(e) for e in rows]
+
+
 @router.get("/me")
 async def me(username: str = Depends(require_admin)):
     return {"username": username}
@@ -196,10 +218,10 @@ async def me(username: str = Depends(require_admin)):
 
 def _top(db: Session, column, since: datetime, limit: int = 10, *filters):
     q = (
-        db.query(column, func.count(db_models.PageVisit.id).label("visits"))
-        .filter(db_models.PageVisit.visited_at >= since, column.isnot(None), *filters)
+        db.query(column, func.count(site_models.PageVisit.id).label("visits"))
+        .filter(site_models.PageVisit.visited_at >= since, column.isnot(None), *filters)
         .group_by(column)
-        .order_by(func.count(db_models.PageVisit.id).desc())
+        .order_by(func.count(site_models.PageVisit.id).desc())
         .limit(limit)
     )
     return [{"label": label, "visits": visits} for label, visits in q.all()]
@@ -210,14 +232,14 @@ async def analytics(days: int = 30, db: Session = Depends(get_db), _: str = Depe
     days = max(1, min(days, 365))
     now = datetime.now(timezone.utc)
     since = now - timedelta(days=days)
-    PV = db_models.PageVisit
+    PV = site_models.PageVisit
     in_range = PV.visited_at >= since
 
     total_visits = db.query(func.count(PV.id)).filter(in_range).scalar() or 0
     unique_visitors = db.query(func.count(func.distinct(PV.visitor_ip))).filter(in_range).scalar() or 0
     contacts = (
-        db.query(func.count(db_models.ContactSubmission.id))
-        .filter(db_models.ContactSubmission.created_at >= since)
+        db.query(func.count(site_models.ContactSubmission.id))
+        .filter(site_models.ContactSubmission.created_at >= since)
         .scalar()
         or 0
     )

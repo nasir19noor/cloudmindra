@@ -1,13 +1,15 @@
+"""HTTP API (DESIGN.md §2.2). Background work runs in the worker container (worker.py)."""
+import os
+from datetime import datetime
+
+import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime
-import asyncio
-import uvicorn
-import os
 
-from database import init_db
-import monitoring
-from routers import contact, services, blog, analytics, admin, auth, monitors, orgs, team
+from apps import MODULES
+from core.database import init_db
+from core.routers import admin, auth, orgs, team
+from website.routers import analytics, blog, contact, services
 
 app = FastAPI(
     title="CloudMindra API",
@@ -25,11 +27,8 @@ app.add_middleware(
 
 
 @app.on_event("startup")
-async def on_startup():
+def on_startup():
     init_db()
-    # Set MONITOR_WORKER=false to run the API without background uptime checks
-    if os.getenv("MONITOR_WORKER", "true").strip().lower() not in ("0", "false", "no"):
-        app.state.monitor_task = asyncio.create_task(monitoring.worker())
 
 
 @app.get("/")
@@ -42,15 +41,17 @@ async def health():
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
 
-app.include_router(contact.router)
-app.include_router(services.router)
-app.include_router(blog.router)
-app.include_router(analytics.router)
-app.include_router(admin.router)
-app.include_router(auth.router)
-app.include_router(orgs.router)
-app.include_router(team.router)
-app.include_router(monitors.router)
+# Marketing website
+for website_router in (contact, services, blog, analytics):
+    app.include_router(website_router.router)
+
+# Platform (core)
+for core_router in (admin, auth, orgs, team):
+    app.include_router(core_router.router)
+
+# Modules
+for module in MODULES.values():
+    app.include_router(module.router)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=11001)

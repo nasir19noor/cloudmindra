@@ -12,8 +12,10 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Imported so autogenerate can compare against every schema's models
-import db_models  # noqa: E402,F401
-from database import BASES  # noqa: E402
+import apps.uptime.models  # noqa: E402,F401
+import core.models  # noqa: E402,F401
+import website.models  # noqa: E402,F401
+from core.database import BASES  # noqa: E402
 
 target_metadata = [base.metadata for base in BASES.values()]
 
