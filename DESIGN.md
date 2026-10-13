@@ -319,8 +319,9 @@ Errors: 401 not signed in · 403 role/module · 404 not found or not a member ·
 | `/portal/[org]` | Overview tiles per enabled module (status, usage) | 🔜 |
 | `/portal/[org]/{uptime,review,cost,security,iac}` | Module pages | 🔜 |
 | `/portal/[org]/connections` | AWS accounts | 🔜 |
-| `/portal/[org]/reports` · `/team` · `/settings` | Files · members/invites/alerts · name, tiers & usage, activity, leave/delete | 🔜 |
-| `/portal/invite` | Accept invitation | 🔜 |
+| `/portal/workspace?org=` | Workspace admin for owners and admins: name & currency, team (members, roles, invitations, seats), leave, delete (owner, type-to-confirm). Members/viewers see a "not allowed" notice and can leave from `/portal` | 🚧 |
+| `/portal/[org]/reports` · `/settings` | Files · tiers & usage, activity, alert preferences (later merged with `/portal/workspace`) | 🔜 |
+| `/portal/invite` | Accept invitation (preview before sign-in, token kept in sessionStorage) | 🚧 |
 
 The sidebar is built from `GET /api/orgs/{org}` (`role`, modules with tier/limits/usage), so new modules appear without layout changes. Free modules show usage and an "Upgrade to Pro" hint; actions are hidden by role but always enforced server-side.
 
