@@ -72,6 +72,17 @@ def send_contact_email(name: str, email: str, company: str | None, message: str)
         logger.info("Contact email sent for %s", email)
 
 
+def send_invitation_email(to: str, subject: str, body: str) -> bool:
+    """Workspace invitation, sent from the no-reply address like alerts."""
+    mail_from = os.getenv("ALERT_FROM_ADDRESS", "no-reply@cloudmindra.com")
+    msg = EmailMessage()
+    msg["From"] = formataddr(("CloudMindra", mail_from))
+    msg["To"] = to
+    msg["Subject"] = _clean_header(subject)
+    msg.set_content(body)
+    return _send(msg)
+
+
 def send_alert_email(to: str, subject: str, body: str) -> bool:
     """Send a monitoring alert to a customer."""
     # Separate from MAIL_FROM_ADDRESS so customer replies do not land in the hi@ inbox

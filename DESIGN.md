@@ -85,7 +85,7 @@ Until phase 3 the uptime loop runs inside the API process (`MONITOR_WORKER=true`
 
 ---
 
-## 4. Multi-tenancy 🚧 (workspaces, roles, `org_access` built; invitations/team UI in phase 4)
+## 4. Multi-tenancy 🚧 (workspaces, roles, `org_access`, invitations and team management built; alert preferences in phase 4)
 
 **Model:** shared database and tables; every tenant-owned row has `org_id`. UI term: **Workspace** (code: `organization`).
 
@@ -96,7 +96,8 @@ Until phase 3 the uptime loop runs inside the API process (`MONITOR_WORKER=true`
 | First login | Auto-create "{Name}'s workspace" with the user as owner. |
 | Roles | `owner` · `admin` · `member` · `viewer` (see 4.2). Always ≥ 1 owner. |
 | Member cap | 3 if the workspace has no Pro module; 10 once any module is Pro; admin override per workspace. |
-| Invitations | By email, 7-day token (only SHA-256 hash stored), sent from `no-reply@`. Accept requires the **exact verified email** invited (case-insensitive). Admin can cancel and re-invite. |
+| Invitations | By email, 7-day token (only SHA-256 hash stored), sent from `no-reply@`. Owners and admins invite as admin/member/viewer (never owner). Accept requires the **exact verified email** invited (case-insensitive). Inviting the same address again replaces the link; invitations can be cancelled. Pending invitations count as seats. Link: `/portal/invite?token=…` (token kept in sessionStorage through sign-in, removed from the address bar). |
+| Leaving | Any member can leave; someone left with no workspace gets a new personal one. The last owner cannot leave, be demoted or be removed. |
 | Alerts | On by default for every role including viewers; each member can opt out per event type. |
 
 ### 4.2 Permissions
@@ -301,7 +302,7 @@ The container runs `migrate.py` (see §2.1) before start; take a `pg_dump` befor
 | Platform admin ✅ | `/api/admin/me`, `/analytics`, `/users`, `PUT /users/{id}` (is_admin), `POST /logout` |
 | Uptime 🚧 | `GET/POST /api/orgs/{org}/uptime/monitors`, `PATCH/DELETE …/monitors/{id}`, `POST …/{id}/check`, `GET …/{id}/checks` (read: `uptime.read`, write: `uptime.write`) |
 | Workspaces 🚧 | `GET/POST /api/orgs`, `GET/PATCH/DELETE /api/orgs/{org}` (name, currency), `POST /api/orgs/{org}/select` (remember last workspace) |
-| Team 🔜 | `/api/orgs/{org}/members[/{user}]`, `/api/orgs/{org}/invitations[/{id}]`, `POST /api/invitations/accept` |
+| Team 🚧 | `GET /api/orgs/{org}/members` (`members.read`) · `PATCH/DELETE /api/orgs/{org}/members/{user}` (`members.manage`; owner role needs `org.transfer`; DELETE on yourself = leave) · `GET/POST /api/orgs/{org}/invitations`, `DELETE …/invitations/{id}` (`members.manage`) · `GET /api/invitations/preview?token=` (no sign-in) · `POST /api/invitations/accept` |
 | Platform 🔜 | `/api/orgs/{org}/jobs/{id}`, `/reports[/{id}/download]`, `/connections[/{id}]`, `/activity` |
 | Modules 🔜 | `/api/orgs/{org}/{app_key}/…` |
 
@@ -344,7 +345,7 @@ The sidebar is built from `GET /api/orgs/{org}` (`role`, modules with tier/limit
 | 1 | Alembic, Postgres schemas + roles per module (move existing tables, drop cross-schema FKs), workspaces, memberships, backfill, `org_access`; uptime API scoped to workspaces; portal workspace switcher | 🚧 |
 | 2 | Catalog, Free/Pro per module, `org_apps`, limits & usage, isolation test | 🔜 |
 | 3 | `core/` + `apps/` layout, engine per module role, worker container, job queue, outbox per schema + relay, uptime moved, notify, audit, module summary APIs | 🔜 |
-| 4 | Team: invitations, roles, alert prefs, member caps, 2-free-workspace limit | 🔜 |
+| 4 | Team: invitations, roles, member caps (🚧 built early, with the portal Team section and `/portal/invite`); alert preferences (🔜) | 🚧 |
 | 5 | Portal: workspace switcher, module sidebar, Team, Settings | 🔜 |
 | 6 | Admin: workspaces, set Pro per module, overrides, jobs | 🔜 |
 | 7 | AWS: Roles Anywhere hub, CloudFormation onboarding, connections | 🔜 |

@@ -82,6 +82,11 @@ def ensure_workspace(db: Session, user: db_models.User) -> None:
         user.last_org_id = org_ids[0]
 
 
+def member_limit(org: db_models.Organization) -> int:
+    """Seats per workspace: admin override, else MEMBER_LIMIT (3 on Free; phase 2 raises it to 10 with any Pro module)."""
+    return org.member_limit or int(os.getenv("MEMBER_LIMIT", "3"))
+
+
 def owned_workspace_count(db: Session, user_id: str) -> int:
     return (
         db.query(db_models.Membership)

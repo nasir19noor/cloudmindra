@@ -34,7 +34,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 PROVIDERS = {"google": "Google"}
 
 # Frontend pages a login may return to; anything else falls back to the portal
-NEXT_PAGES = ("/portal", "/admin")
+NEXT_PAGES = ("/portal", "/admin", "/portal/invite")
 
 
 def _portal_redirect(error: str | None = None, next_page: str = "/portal") -> RedirectResponse:
@@ -105,7 +105,8 @@ def callback(
     response.delete_cookie(STATE_COOKIE, path="/api/auth")
     response.set_cookie(
         SESSION_COOKIE,
-        encode_signed({k: v for k, v in user.items() if k != "email_verified"}, SESSION_TTL),
+        # email_verified is kept: accepting an invitation requires a verified address
+        encode_signed(user, SESSION_TTL),
         max_age=SESSION_TTL,
         httponly=True,
         secure=cookie_secure(),
