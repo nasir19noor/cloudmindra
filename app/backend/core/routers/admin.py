@@ -9,11 +9,13 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from core.audit import audit, event_out
+from core.health import system_health
+from core.jobs import job_out
 from core.auth import client_ip, require_admin
 from core.auth import SESSION_COOKIE, current_user
 from core.database import get_db
-from core.catalog import APPS, LIMITS, WORKSPACE_SEATS
-from core.entitlements import row_is_pro, seat_limit
+from core.catalog import APPS, LABELS, LIMITS, WORKSPACE_SEATS
+from core.entitlements import row_is_pro, seat_limit, utc_iso
 from core import models as db_models
 from website import models as site_models
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -93,10 +95,20 @@ def _module_tiers(db: Session) -> dict[str, dict[str, dict]]:
     for r in db.query(db_models.OrgApp):
         out[r.org_id][r.app_key] = {
             "tier": "pro" if row_is_pro(r) else "free",
-            "pro_until": r.pro_until.isoformat() if r.pro_until else None,
+            "pro_until": utc_iso(r.pro_until),
             "overrides": r.limits or {},
         }
     return out
+
+
+def _module_out(key: str, app: dict, state: dict | None) -> dict:
+    """Tier plus what the overrides editor needs: each limit's Free and Pro default and its label."""
+    state = state or {"tier": "free", "pro_until": None, "overrides": {}}
+    return {
+        "name": app["name"], **state,
+        "limits": {k: {"free": LIMITS[key]["free"][k], "pro": LIMITS[key]["pro"][k], "label": LABELS.get(k, k),
+                       "override": state["overrides"].get(k)} for k in LIMITS[key]["free"]},
+    }
 
 
 def _workspace_out(db: Session, org: db_models.Organization, owners: list[str], members: int, pending: int,
@@ -111,8 +123,7 @@ def _workspace_out(db: Session, org: db_models.Organization, owners: list[str], 
         "member_limit": org.member_limit,
         "effective_limit": seat_limit(db, org),
         "default_limit": WORKSPACE_SEATS["pro" if any(t["tier"] == "pro" for t in tiers.values()) else "free"],
-        "modules": {key: {"name": app["name"], **tiers.get(key, {"tier": "free", "pro_until": None, "overrides": {}})}
-                    for key, app in APPS.items() if app["available"]},
+        "modules": {key: _module_out(key, app, tiers.get(key)) for key, app in APPS.items() if app["available"]},
         "created_at": org.created_at.isoformat() if org.created_at else None,
     }
 
@@ -209,6 +220,72 @@ async def platform_activity(limit: int = 200, org_id: str | None = None, db: Ses
         q = q.filter(db_models.AuditEvent.org_id == org_id)
     rows = q.order_by(db_models.AuditEvent.created_at.desc(), db_models.AuditEvent.id.desc()).limit(max(1, min(limit, 1000)))
     return [event_out(e) for e in rows]
+
+
+# --- System health and jobs (DESIGN.md §7) ---------------------------------------------
+
+@router.get("/system")
+async def system(db: Session = Depends(get_db), _: str = Depends(require_admin)):
+    """Job queue, outbox backlog and module signals; status "warning" lists what needs attention."""
+    return system_health(db)
+
+
+@router.get("/jobs")
+async def list_jobs(status: str | None = None, org_id: str | None = None, type: str | None = None, limit: int = 100,
+                    db: Session = Depends(get_db), _: str = Depends(require_admin)):
+    q = db.query(db_models.Job)
+    if status:
+        q = q.filter(db_models.Job.status == status)
+    if org_id:
+        q = q.filter(db_models.Job.org_id == org_id)
+    if type:
+        q = q.filter(db_models.Job.type == type)
+    rows = q.order_by(db_models.Job.created_at.desc()).limit(max(1, min(limit, 500))).all()
+    names = dict(db.query(db_models.Organization.id, db_models.Organization.name)
+                 .filter(db_models.Organization.id.in_({j.org_id for j in rows if j.org_id})))
+    return [{**job_out(j), "org_id": j.org_id, "org_name": names.get(j.org_id), "error_full": j.error,
+             "payload": j.payload, "locked_by": j.locked_by} for j in rows]
+
+
+def _job_or_404(db: Session, job_id: str) -> "db_models.Job":
+    job = db.get(db_models.Job, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@router.post("/jobs/{job_id}/retry")
+async def retry_job(job_id: str, request: Request, admin_email: str = Depends(require_admin), db: Session = Depends(get_db)):
+    """Run a failed or cancelled job again from attempt 1."""
+    job = _job_or_404(db, job_id)
+    if job.status not in ("failed", "cancelled"):
+        raise HTTPException(status_code=409, detail=f"Only failed or cancelled jobs can be retried (this one is {job.status})")
+    audit(db, "job.retried", org_id=job.org_id, actor_email=admin_email, target_id=job.id,
+          metadata={"type": job.type, "was": job.status, "attempts": job.attempts}, ip=client_ip(request))
+    job.status, job.attempts, job.run_at, job.finished_at = "queued", 0, datetime.now(timezone.utc), None
+    job.locked_by = job.locked_at = None
+    db.commit()
+    return job_out(job)
+
+
+@router.post("/jobs/{job_id}/cancel")
+async def cancel_job(job_id: str, request: Request, admin_email: str = Depends(require_admin), db: Session = Depends(get_db)):
+    """Stop a queued job (including one waiting for a retry) from running."""
+    job = _job_or_404(db, job_id)
+    if job.status != "queued":
+        raise HTTPException(status_code=409, detail=f"Only queued jobs can be cancelled (this one is {job.status})")
+    # Conditional update: a worker may claim the job between the check above and this write
+    changed = (db.query(db_models.Job)
+               .filter(db_models.Job.id == job_id, db_models.Job.status == "queued")
+               .update({"status": "cancelled", "finished_at": datetime.now(timezone.utc)}, synchronize_session=False))
+    if not changed:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="The job started running before it could be cancelled")
+    audit(db, "job.cancelled", org_id=job.org_id, actor_email=admin_email, target_id=job.id,
+          metadata={"type": job.type, "attempts": job.attempts}, ip=client_ip(request))
+    db.commit()
+    db.refresh(job)
+    return job_out(job)
 
 
 @router.get("/me")

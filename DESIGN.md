@@ -7,7 +7,7 @@ Update it in the same change as any decision or structural change. Diagrams: [do
 
 ## Deployment status
 
-Last verified **2026-10-14** against production (`main` at `44031ca`: PR #1 phase 1, PR #2 team invitations, workspace admin page, PR #3 admin seat limits, PR #4 phase 2 tiers, PR #5 phase 3 platform, PR #6 phase 4 alert preferences). Verified from outside with unauthenticated requests: a route that exists answers `401` (sign-in required), a missing route `404`.
+Last verified **2026-10-14** against production (`main` at `e9e8781`: PR #1 phase 1, PR #2 team invitations, workspace admin page, PR #3 admin seat limits, PR #4 phase 2 tiers, PR #5 phase 3 platform, PR #6 phase 4 alert preferences, PR #7 phase 5 portal). Verified from outside with unauthenticated requests: a route that exists answers `401` (sign-in required), a missing route `404`.
 
 | Area | What | Status | Evidence / note |
 |---|---|---|---|
@@ -27,8 +27,9 @@ Last verified **2026-10-14** against production (`main` at `44031ca`: PR #1 phas
 | Phase 2: tiers | Free/Pro per module (`core.org_apps`), monthly usage (`core.usage_counters`, migration `0004`), Uptime tier limits, seats 3→10 with any Pro, 2 free workspaces per user, `/admin` Free/Pro switch, portal plan badges, workspace Plan section | ✅ | `/api/orgs/{org}/modules` 401 |
 | Phase 3: platform | `core/` + `apps/` + `website/` layout, `cloudmindra-worker` container, job queue + schedules, outbox per schema + relay, uptime alerts and workspace cleanup via events, `notify()`, audit log + Activity section, uptime summary API (migration `0005`) | ✅ | `/api/orgs/{org}/activity` and `/uptime/summary` 401; check `docker logs cloudmindra-worker` for "Uptime loop is leader" |
 | Phase 4: alert preferences | Per-member, per-workspace email alert switches (`core.notification_prefs`, migration `0006`), "Email alerts" card in `/portal`, settings link in every alert email, one email job per recipient | ✅ | `/api/orgs/{org}/notifications` 401 |
-| Phase 5: portal | `/portal/{org}` shell (workspace switcher, module sidebar from the catalog), Overview tiles from summary APIs, `/uptime`, `/alerts`, `/settings` (moved from `/portal/workspace`, which redirects), coming-soon module pages, alert emails link to the workspace's pages | 🚧 | Branch `feat/phase5-portal`; tested end-to-end in Chrome (owner, viewer on mobile width, signed out) |
-| Phase 6+ | Admin jobs view, AWS connections, other modules | 🔜 | Not built |
+| Phase 5: portal | `/portal/{org}` shell (workspace switcher, module sidebar from the catalog), Overview tiles from summary APIs, `/uptime`, `/alerts`, `/settings` (moved from `/portal/workspace`, which redirects), coming-soon module pages, alert emails link to the workspace's pages | ✅ | `/portal/{org}/uptime` 200 |
+| Phase 6: admin tooling | `/admin`: system health (job queue, failed jobs, outbox backlog, overdue uptime monitors) with a warning banner; jobs table with filters, Retry / Cancel; platform activity; Edit plan dialog (tier, Pro end date, per-limit overrides) | 🚧 | Branch `feat/phase6-admin`; API and the page tested in Chrome |
+| Phase 7+ | AWS connections (Roles Anywhere, CloudFormation onboarding), Cost / Security / Review / IaC modules | 🔜 | Not built |
 
 ---
 
@@ -123,7 +124,7 @@ Both containers use the same image and `.env`; `deploy.yml` starts `backend work
 | Member cap | Seats = members + pending invitations. 3 if the workspace has no Pro module, 10 once any module is Pro (`catalog.WORKSPACE_SEATS`); platform-admin override per workspace (`organizations.member_limit`). |
 | Invitations | By email, 7-day token (only SHA-256 hash stored), sent from `no-reply@`. Owners and admins invite as admin/member/viewer (never owner). Accept requires the **exact verified email** invited (case-insensitive). Inviting the same address again replaces the link; invitations can be cancelled. Pending invitations count as seats. Link: `/portal/invite?token=…` (token kept in sessionStorage through sign-in, removed from the address bar). |
 | Leaving | Any member can leave; someone left with no workspace gets a new personal one. The last owner cannot leave, be demoted or be removed. |
-| Alerts | On by default for every role including viewers; each member switches individual alerts off **for themselves, per workspace** on the "Email alerts" page `/portal/{org}/alerts` (🚧; deployed version: a card in `/portal`) (no row in `core.notification_prefs` = on). Leaving a workspace deletes that member's settings. |
+| Alerts | On by default for every role including viewers; each member switches individual alerts off **for themselves, per workspace** on the "Email alerts" page `/portal/{org}/alerts` (no row in `core.notification_prefs` = on). Leaving a workspace deletes that member's settings. |
 
 ### 4.2 Permissions
 Endpoints check an **action**, not a role. Mapping lives in `core/catalog.py`:
@@ -258,15 +259,16 @@ Extraction steps for one module: move `apps/<x>` + its schema into a new service
 
 ---
 
-## 7. Shared platform services ✅ (jobs, outbox relay, notify, audit, alert preferences deployed; reports, FX 🔜)
+## 7. Shared platform services ✅ (jobs, outbox relay, notify, audit, alert preferences deployed; system health 🚧; reports, FX 🔜)
 
 | Service | Purpose | Key points |
 |---|---|---|
 | **Jobs** (`jobs`, `schedules`) ✅ | Background work for any module | `enqueue()` in the caller's transaction (optional `dedupe_key`); claimed with `SELECT … FOR UPDATE SKIP LOCKED`; retries with backoff 30 s × 2ⁿ (max 1 h), `failed` after `max_attempts` (5); `running` jobs older than 15 min are re-queued; schedules enqueue a job every `interval_seconds`. Status: `GET /api/orgs/{org}/jobs/{id}`. Uptime keeps its own high-frequency loop in the worker. |
-| **Notifications** (`notify()`, preferences) ✅ | Email alerts per event — the list is `catalog.NOTIFICATION_EVENTS` (`uptime.down`, `uptime.recovered`, `uptime.ssl_expiring`; later `cost.anomaly`, `security.critical`, `review.done`) | Runs inside an event job. Recipients = members who have not switched that event off; **one `notify.email` job per recipient** (dedupe `notify:<event id>:<address>`), so a failure for one member is retried alone and never re-sends to the others. Every email ends with a link to the alert settings — 🚧 `/portal/{org}/alerts` (deployed: `/portal#alerts`, which still redirects there); uptime alerts link to `/portal/{org}/uptime`. Sender `CloudMindra Monitoring <no-reply@cloudmindra.com>` (`ALERT_FROM_ADDRESS`). Slack/webhooks later as channels. |
+| **Notifications** (`notify()`, preferences) ✅ | Email alerts per event — the list is `catalog.NOTIFICATION_EVENTS` (`uptime.down`, `uptime.recovered`, `uptime.ssl_expiring`; later `cost.anomaly`, `security.critical`, `review.done`) | Runs inside an event job. Recipients = members who have not switched that event off; **one `notify.email` job per recipient** (dedupe `notify:<event id>:<address>`), so a failure for one member is retried alone and never re-sends to the others. Every email ends with a link to the alert settings `/portal/{org}/alerts` (older emails' `/portal#alerts` redirects there); uptime alerts link to `/portal/{org}/uptime`. Sender `CloudMindra Monitoring <no-reply@cloudmindra.com>` (`ALERT_FROM_ADDRESS`). Slack/webhooks later as channels. |
 | **Audit** (`audit()`, `audit_events`) ✅ | Who did what | Recorded with actor, details and IP for: alert settings changed (🚧), workspace created/updated/deleted, member invited/joined/role changed/removed/left, invitation cancelled, monitor created/updated/deleted, module tier changed, seat limit changed, platform admin granted/revoked. Owners/admins: `GET /api/orgs/{org}/activity` (action `audit.view`, which viewers' `*.read` does not cover) and the Activity section of `/portal/workspace`; platform admins: `GET /api/admin/activity`. |
 | **Reports** (`reports`) | PDF/ZIP/JSON outputs | Private S3 bucket under `org/{org_id}/…`; download via 5-minute signed URL after access check; retention 90 days on Free. |
 | **FX** (`fx_rates`) | Currency conversion | Daily ECB reference rates (includes IDR). |
+| **Health** (`core/health.py`, `HEALTH_PROVIDERS`) 🚧 | Is the platform keeping up? | `system_health()` for `/admin`: job counts, failed in 24 h, oldest due job (warning after 5 min), unpublished events per outbox (warning after 5 min), and each module's provider (uptime: active and overdue monitors — overdue = not checked within its own interval + 10 min). Any warning turns the status to `warning` and shows a banner. |
 | **Outbox relay** (`<schema>.outbox`) ✅ | Reliable events between modules | Runs in the worker; for each unpublished event (oldest first, `SKIP LOCKED`) enqueues one `event` job per subscriber with dedupe key `<event id>:<handler>`, commits the jobs, **then** marks `published_at` — a crash in between re-relays and the duplicates are dropped, never lost. Handlers register with `@subscribe(...)` and must be idempotent. Events today: `org.deleted` (core), `uptime.down`, `uptime.recovered`, `uptime.ssl_expiring` (uptime). |
 
 ---
@@ -345,7 +347,7 @@ The container runs `migrate.py` (see §2.1) before start; take a `pg_dump` befor
 | Area | Routes |
 |---|---|
 | Auth ✅ | `GET /api/auth/login`, `/callback`, `/logout`, `/me` |
-| Platform admin ✅ | `/api/admin/me`, `/analytics`, `/users`, `PUT /users/{id}` (is_admin), `POST /logout` · ✅ `GET /orgs` (seats used, owners, limits; 🚧 + module tiers), `PUT /orgs/{id}` (`member_limit` 1–1000, `null` = default) · 🚧 `PUT /orgs/{id}/modules/{app}` (`tier`, `pro_until`, `limits`) |
+| Platform admin ✅ | `/api/admin/me`, `/analytics`, `/users`, `PUT /users/{id}` (is_admin), `POST /logout`, `GET /orgs` (seats used, owners, module tiers; 🚧 + per-limit Free/Pro defaults and overrides), `PUT /orgs/{id}` (`member_limit` 1–1000, `null` = default), `PUT /orgs/{id}/modules/{app}` (`tier`, `pro_until`, `limits`), `GET /activity` · 🚧 `GET /system` (health; `status` ok/warning + `warnings`), `GET /jobs` (`?status=&type=&org_id=`), `POST /jobs/{id}/retry` (failed/cancelled → queued, attempt 1), `POST /jobs/{id}/cancel` (queued only, race-safe) |
 | Uptime ✅ | `GET/POST /api/orgs/{org}/uptime/monitors`, `PATCH/DELETE …/monitors/{id}`, `POST …/{id}/check`, `GET …/{id}/checks` (read: `uptime.read`, write: `uptime.write`) |
 | Workspaces ✅ | `GET/POST /api/orgs`, `GET/PATCH/DELETE /api/orgs/{org}` (name, currency), `POST /api/orgs/{org}/select` (remember last workspace) · 🚧 `GET /api/orgs/{org}/modules` (tier, limits, usage, features per module; also included in `GET /api/orgs/{org}`); uptime list adds `tier`, `locked_intervals`, `history_days` |
 | Team ✅ | `GET /api/orgs/{org}/members` (`members.read`) · `PATCH/DELETE /api/orgs/{org}/members/{user}` (`members.manage`; owner role needs `org.transfer`; DELETE on yourself = leave) · `GET/POST /api/orgs/{org}/invitations`, `DELETE …/invitations/{id}` (`members.manage`) · `GET /api/invitations/preview?token=` (no sign-in) · `POST /api/invitations/accept` |
@@ -360,14 +362,14 @@ Errors: 401 not signed in · 403 role/module · 404 not found or not a member ·
 
 | Route | Purpose | Status |
 |---|---|---|
-| `/portal` | ✅ deployed: sign-in + single-page dashboard. 🚧 phase 5: sign-in only; signed-in users are sent to `/portal/{last_org_id}` (`#alerts` → `/alerts`) | ✅ / 🚧 |
-| `/admin` | Platform admin: analytics, users + admin toggle, contacts, Workspaces with seat-limit override ✅; Free/Pro switch per module 🚧; jobs 🔜 | ✅ |
-| `/portal/{org}` | **Shell** (`layouts/PortalLayout.astro` + `lib/shell.ts` `bootPortal()`): top bar (workspace switcher that keeps the current section, role, New workspace / Leave, account, Platform admin, Sign out) and sidebar (Overview, every catalog module with Free/Pro/Soon badge, Email alerts, Settings & team for owners/admins). **Overview**: one tile per module from its summary API (Uptime: monitors of limit, down/up/paused), team & seats, your alerts, last 5 activity entries (owners/admins) | 🚧 |
-| `/portal/{org}/uptime` · `/portal/{org}/{review,cost,security,iac}` | Uptime dashboard (moved from `/portal`) · coming-soon pages with each module's planned limits (`[module].astro`; built modules get their own page, which Astro prefers) | 🚧 |
-| `/portal/{org}/alerts` | The caller's email alert switches for this workspace (any role) | 🚧 |
-| `/portal/{org}/settings` | Workspace admin for owners/admins (moved from `/portal/workspace`): general, plan, team & invitations, activity (`#activity`), danger zone; others see a notice | 🚧 |
+| `/portal` | Sign-in only; signed-in users are sent to `/portal/{last_org_id}` (`#alerts` → `/alerts`) | ✅ |
+| `/admin` | Platform admin: analytics, users + admin toggle, contacts, Workspaces with seat-limit override and Free/Pro switch per module ✅; 🚧 health banner + System health card, Jobs (filter, Retry, Cancel), Platform activity, Edit plan dialog (tier, Pro until, limit overrides) | ✅ |
+| `/portal/{org}` | **Shell** (`layouts/PortalLayout.astro` + `lib/shell.ts` `bootPortal()`): top bar (workspace switcher that keeps the current section, role, New workspace / Leave, account, Platform admin, Sign out) and sidebar (Overview, every catalog module with Free/Pro/Soon badge, Email alerts, Settings & team for owners/admins). **Overview**: one tile per module from its summary API (Uptime: monitors of limit, down/up/paused), team & seats, your alerts, last 5 activity entries (owners/admins) | ✅ |
+| `/portal/{org}/uptime` · `/portal/{org}/{review,cost,security,iac}` | Uptime dashboard (moved from `/portal`) · coming-soon pages with each module's planned limits (`[module].astro`; built modules get their own page, which Astro prefers) | ✅ |
+| `/portal/{org}/alerts` | The caller's email alert switches for this workspace (any role) | ✅ |
+| `/portal/{org}/settings` | Workspace admin for owners/admins (moved from `/portal/workspace`): general, plan, team & invitations, activity (`#activity`), danger zone; others see a notice | ✅ |
 | `/portal/[org]/connections` | AWS accounts | 🔜 |
-| `/portal/workspace?org=` | 🚧 phase 5: 301 redirect to `/portal/{org}/settings`. Deployed version: workspace admin for owners and admins: name & currency, team (members, roles, invitations, seats), leave, delete (owner, type-to-confirm). Members/viewers see a "not allowed" notice and can leave from `/portal` ✅; Plan section (each module's tier, limits, usage, features) ✅; Activity section (last 50 audit entries in plain language) ✅ | ✅ |
+| `/portal/workspace?org=` | 301 redirect to `/portal/{org}/settings` (old address) | ✅ |
 | `/portal/{org}/reports` · `/connections` | Generated files · AWS accounts | 🔜 |
 | `/portal/invite` | Accept invitation (preview before sign-in, token kept in sessionStorage) | ✅ |
 
@@ -395,8 +397,8 @@ The sidebar is built from `GET /api/orgs/{org}` (`role`, modules with tier/limit
 | 2 | Catalog, Free/Pro per module, `org_apps`, limits & usage, isolation test (every `/api/orgs/{org_id}/…` route returns 404 to non-members, enumerated from OpenAPI) | ✅ |
 | 3 | `core/` + `apps/` layout, engine per module role, worker container, job queue, outbox per schema + relay, uptime moved, notify, audit, module summary APIs | ✅ |
 | 4 | Team: invitations, roles, member caps, `/portal/invite`, `/portal/workspace` (✅ deployed early); alert preferences + per-recipient email jobs | ✅ |
-| 5 | Portal: `/portal/{org}` shell with workspace switcher and module sidebar, Overview, Uptime, Alerts, Settings & team, coming-soon module pages | 🚧 |
-| 6 | Admin: workspaces, set Pro per module, overrides, jobs | 🔜 |
+| 5 | Portal: `/portal/{org}` shell with workspace switcher and module sidebar, Overview, Uptime, Alerts, Settings & team, coming-soon module pages | ✅ |
+| 6 | Admin: workspaces and Pro per module (✅ earlier); system health, jobs (retry/cancel), platform activity, plan overrides editor (🚧) | 🚧 |
 | 7 | AWS: Roles Anywhere hub, CloudFormation onboarding, connections | 🔜 |
 | 8+ | Cost Analyzer (currency selection), Security Scan, Review, IaC | 🔜 |
 
@@ -417,6 +419,8 @@ The sidebar is built from `GET /api/orgs/{org}` (`role`, modules with tier/limit
 | 2026-10-13 | User-selectable display currency; store original, convert with daily ECB rates. |
 | 2026-10-13 | Team rules: any user creates workspaces (max 2 free-only), member cap 3/10, exact-email invites, alerts default on for all roles. |
 | 2026-10-13 | Deployed: phase 1 (PR #1), team invitations (PR #2), workspace admin page (`d8db972`). |
+| 2026-10-14 | Deployed: PR #7 phase 5 portal. |
+| 2026-10-14 | Timestamps shown as dates (`pro_until`) are returned in UTC regardless of the database session's time zone. |
 | 2026-10-14 | Deployed: PR #6 phase 4 alert preferences. |
 | 2026-10-14 | Portal URLs carry the workspace: `/portal/{org}/{section}`; `/portal` only signs in and redirects. Old `/portal/workspace?org=` and `/portal#alerts` links keep working via redirects. |
 | 2026-10-14 | Deployed: PR #5 phase 3 (worker container, jobs, outbox, audit). |
