@@ -5,6 +5,7 @@ Handlers run as jobs (at-least-once, retried on failure), so they must be idempo
 from sqlalchemy.orm import Session
 
 from core.entitlements import USAGE_PROVIDERS
+from core.health import HEALTH_PROVIDERS
 from core.notify import notify
 from core.outbox import subscribe
 from apps.uptime import models as db_models
@@ -36,3 +37,27 @@ def _usage(db: Session, org_id: str) -> dict[str, int]:
 
 # Core reads module usage through this provider, never by querying uptime tables
 USAGE_PROVIDERS["uptime"] = _usage
+
+
+OVERDUE_GRACE_MINUTES = 10  # how late past its own interval a check may be before /admin warns
+
+
+def _health(db: Session) -> dict:
+    """For /admin: is the uptime loop keeping up? (DESIGN.md §7)"""
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    active = db.query(db_models.Monitor).filter(db_models.Monitor.is_active.is_(True)).all()
+    overdue = 0
+    for m in active:
+        since = m.last_checked_at or m.created_at
+        if since is not None and now - since > timedelta(minutes=m.interval_minutes + OVERDUE_GRACE_MINUTES):
+            overdue += 1
+    last = max((m.last_checked_at for m in active if m.last_checked_at), default=None)
+    out = {"active_monitors": len(active), "overdue_monitors": overdue, "last_check_at": last.isoformat() if last else None}
+    if overdue:
+        out["warning"] = f"{overdue} monitor(s) are overdue for a check — is the worker running?"
+    return out
+
+
+HEALTH_PROVIDERS["uptime"] = _health

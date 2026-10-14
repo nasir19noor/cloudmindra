@@ -29,6 +29,11 @@ def _aware(dt: datetime | None) -> datetime | None:
     return dt.replace(tzinfo=timezone.utc) if dt is not None and dt.tzinfo is None else dt
 
 
+def utc_iso(dt: datetime | None) -> str | None:
+    """ISO timestamp in UTC whatever the database session's time zone (pro_until is shown as a date)."""
+    return _aware(dt).astimezone(timezone.utc).isoformat() if dt else None
+
+
 def current_period(now: datetime | None = None) -> str:
     return (now or _now()).strftime("%Y-%m")
 
@@ -159,7 +164,7 @@ def modules_overview(db: Session, org_id: str) -> list[dict]:
             "available": app["available"],
             "tier": t,
             "status": row.status if row else "active",
-            "pro_until": _aware(row.pro_until).isoformat() if row and row.pro_until else None,
+            "pro_until": utc_iso(row.pro_until) if row else None,
             "limits": lim,
             "overrides": (row.limits or {}) if row else {},
             "usage": usage,

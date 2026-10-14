@@ -46,7 +46,9 @@ export function showMsg(id: string, text: string | null, ok = false) {
   el.classList.toggle('text-emerald-700', ok);
 }
 
-export type AuditEvent = { id: number; action: string; actor: string | null; details: Record<string, any>; created_at: string };
+export type AuditEvent = {
+  id: number; action: string; actor: string | null; app_key?: string | null; details: Record<string, any>; created_at: string;
+};
 
 // Plain-language line for an audit action; the caller escapes the result
 export function describeActivity(e: AuditEvent): string {
@@ -56,7 +58,7 @@ export function describeActivity(e: AuditEvent): string {
     case 'org.created': return `created the workspace "${d.name}"`;
     case 'org.updated': return `changed ${Object.keys(d).map((k) => `${k} (${pair(k)})`).join(', ')}`;
     case 'org.seat_limit_changed': return `set the seat limit to ${d.to ?? 'the default'}`;
-    case 'module.tier_changed': return `changed a module from ${d.from} to ${d.to}`;
+    case 'module.tier_changed': return `changed ${e.app_key ?? 'a module'} from ${d.from} to ${d.to}${d.pro_until ? ` (until ${d.pro_until.slice(0, 10)})` : ''}`;
     case 'member.invited': return `${d.resent ? 're-sent an invitation to' : 'invited'} ${d.email} as ${ROLE_LABEL[d.role] ?? d.role}`;
     case 'invitation.cancelled': return `cancelled the invitation for ${d.email}`;
     case 'member.joined': return `joined as ${ROLE_LABEL[d.role] ?? d.role}`;
@@ -67,6 +69,10 @@ export function describeActivity(e: AuditEvent): string {
     case 'uptime.monitor.updated': return `updated a monitor: ${Object.keys(d).map((k) => `${k} ${pair(k)}`).join(', ')}`;
     case 'uptime.monitor.deleted': return `deleted the monitor "${d.name}"`;
     case 'notifications.updated': return 'changed their email alert settings';
+    case 'job.retried': return `retried a ${d.was} ${d.type} job`;
+    case 'job.cancelled': return `cancelled a ${d.type} job`;
+    case 'platform.admin_granted': return `made ${d.email} a platform admin`;
+    case 'platform.admin_revoked': return `removed ${d.email} as platform admin`;
     default: return e.action;
   }
 }
